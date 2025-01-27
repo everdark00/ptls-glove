@@ -14,7 +14,7 @@ from tqdm import tqdm
 from .tde import TreeDrivenEncoder
 
 
-class DeepTFL(BaseEstimator):
+class DeepTLF(BaseEstimator):
     """
     A deep learning model based on XGBoost and a custom neural network.
 
