@@ -10,9 +10,9 @@ class KDiscretizer():
             n_bins=k_bins, encode='ordinal', strategy=d_type)
 
     def fit_transform(self, X):
-        transformed = self.disc.fit_transform(X.loc[:, self.f_names])
-        return transformed
+        X.loc[:, self.f_names] = self.disc.fit_transform(X.loc[:, self.f_names]).astype(int)
+        return X
 
     def transform(self, X):
-        transformed = self.disc.transform(X.loc[:, self.f_names])
-        return transformed
+        X.loc[:, self.f_names] = self.disc.transform(X.loc[:, self.f_names]).astype(int)
+        return X
