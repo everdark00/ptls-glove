@@ -1,2 +1,2 @@
-from .deeptlf import DeepTFL
+from .deeptlf import DeepTLF
 from .tde import TreeDrivenEncoder
