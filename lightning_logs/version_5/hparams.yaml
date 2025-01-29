@@ -1,0 +1,9 @@
+train_batch_size: 256
+train_num_workers: 1
+train_drop_last: false
+valid_batch_size: null
+valid_num_workers: null
+valid_drop_last: false
+test_batch_size: null
+test_num_workers: null
+test_drop_last: false

@@ -16,12 +16,13 @@ class TestModule(pl.LightningModule):
         out = self.model(x)
 
         for m_name in self.metrics.keys():
-            self.metrics[mname].update(out, y)
+            self.metrics[m_name].update(out, y)
+
 
     def get_metrics(self):
         ds_metrics = {}
         for m_name in self.metrics.keys():
-            ds_metrics[m_name] = (self.metrics[m_name].value / self.metrics[m_name].weight).item()
-            self.metrics[m_name].value = torch.tensor(0.)
+            ds_metrics[m_name] = (self.metrics[m_name].mean_value / self.metrics[m_name].weight).item()
+            self.metrics[m_name].mean_value = torch.tensor(0.)
             self.metrics[m_name].weight = torch.tensor(0.)
         return ds_metrics

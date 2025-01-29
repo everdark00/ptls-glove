@@ -36,8 +36,15 @@ class PtlsDataModule(pl.LightningDataModule):
             self.train_dataloader = partial(self.train_dl, train_data)
         if valid_data is not None:
             self.val_dataloader = partial(self.val_dl, valid_data)
-        if test_data is not None:
-            self.test_dataloader = partial(self.test_dl, test_data)
+        #if test_data is not None:
+        self.test_dataloader = torch.utils.data.DataLoader(
+            dataset=test_data,
+            collate_fn=test_data.collate_fn,
+            shuffle=False,
+            num_workers=self.hparams.test_num_workers,
+            batch_size=self.hparams.test_batch_size,
+            drop_last=self.hparams.test_drop_last,
+        )
             
     def train_dl(self, train_data):
         return torch.utils.data.DataLoader(
@@ -68,3 +75,6 @@ class PtlsDataModule(pl.LightningDataModule):
             batch_size=self.hparams.test_batch_size,
             drop_last=self.hparams.test_drop_last,
         )
+
+    def predict_dataloader(self):
+        return self.test_dataloader
