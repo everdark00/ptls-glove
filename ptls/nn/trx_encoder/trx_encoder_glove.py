@@ -51,6 +51,9 @@ class TrxEncoderGlove(nn.Module):
 class TrxEncoderCat(TrxEncoderBase):
     def __init__(self,  
                  embeddings,
+                 embeddings_noise=0.003,
+                 emb_dropout=0,
+                 spatial_dropout=False,
                  agg_type: str = "cat",
                  out_of_index: str = 'clip',
                  ):
@@ -66,7 +69,7 @@ class TrxEncoderCat(TrxEncoderBase):
                 num_embeddings=emb_props['in'],
                 embedding_dim=emb_props['out'],
                 padding_idx=0,
-                max_norm=1 if norm_embeddings else None,
+                max_norm=None,
                 noise_scale=embeddings_noise,
                 dropout=emb_dropout,
                 spatial_dropout=spatial_dropout,
@@ -89,10 +92,14 @@ class TrxEncoderCat(TrxEncoderBase):
 
         if self.agg_type == "cat":
             out = torch.cat(processed_embeddings, dim=2)
-        elif self.agg_type == "sum":
-            out = torch.sum(processed_embeddings, dim=2)
         else:
-            out = torch.mean(processed_embeddings, dim=2)
+            n_emb = 0
+            out = None
+            for i, emb in enumerate(processed_embeddings):
+                out = emb if i == 0 else out + emb
+                n_emb += 1
+            if self.agg_type == "mean":
+                out = out / n_emb
 
         return PaddedBatch(out, x.seq_lens)
 
@@ -101,7 +108,10 @@ class TrxEncoderCat(TrxEncoderBase):
     def output_size(self):
         """Returns hidden size of output representation
         """
+        for e in self.embeddings.values():
+            esz = e.embedding_dim
+            break
         if self.agg_type == "cat":
-            return self.embeddings.values()[0].embedding_dim * len(self.embeddings)
+            return esz * len(self.embeddings)
         else:
-            return self.embeddings.values()[0].embedding_dim
+            return esz

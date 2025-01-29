@@ -1,4 +1,4 @@
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 import pandas as pd
 import numpy as np
 from tqdm.notebook import tqdm
