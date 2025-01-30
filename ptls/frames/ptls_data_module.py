@@ -39,7 +39,7 @@ class PtlsDataModule(pl.LightningDataModule):
         #if test_data is not None:
         self.test_dataloader = torch.utils.data.DataLoader(
             dataset=test_data,
-            collate_fn=test_data.collate_fn,
+            collate_fn=test_data.collate_fn if test_data is not None else None,
             shuffle=False,
             num_workers=self.hparams.test_num_workers,
             batch_size=self.hparams.test_batch_size,
