@@ -51,6 +51,8 @@ class TrxEncoderGlove(nn.Module):
 class TrxEncoderCat(TrxEncoderBase):
     def __init__(self,  
                  embeddings,
+                 numeric_separate=False,
+                 numeric_features=None,
                  embeddings_noise=0.003,
                  emb_dropout=0,
                  spatial_dropout=False,
@@ -58,6 +60,13 @@ class TrxEncoderCat(TrxEncoderBase):
                  out_of_index: str = 'clip',
                  ):
         super().__init__()
+
+        self.numeric_separate = num_embeddings
+        self.numeric_features = numeric_features
+
+        for e in self.embeddings.values():
+            self.esz = e.embedding_dim
+            break
 
         noisy_embeddings = {}
         for emb_name, emb_props in embeddings.items():
@@ -87,6 +96,19 @@ class TrxEncoderCat(TrxEncoderBase):
     def forward(self, x: PaddedBatch):
         processed_embeddings = []
 
+        for fn in self.numeric_features:
+            value = x.payload[f'{fn}_val']
+            pos = x.payload[f'{fn}_pos'] 
+            numeric_embedding = torch.ones((pos.shape[0], pos.shape[1], self.esz)).double()
+            zero_mask = torch.ones(pos.shape[0], pos.shape[1])
+            for i in range(self.esz):
+                if i > 0:
+                    numeric_embedding[:, :, i] *= zero_mask
+                numeric_embedding[:, :, i][pos == i + 1] = value[pos == i + 1]
+                numeric_embedding[:, :, i][pos == 0] = 0
+                zero_mask *= (pos != i + 1)
+            processed_embeddings.append(numeric_embedding)
+
         for field_name in self.embeddings.keys():
             processed_embeddings.append(self.get_category_embeddings(x, field_name))
 
@@ -108,10 +130,8 @@ class TrxEncoderCat(TrxEncoderBase):
     def output_size(self):
         """Returns hidden size of output representation
         """
-        for e in self.embeddings.values():
-            esz = e.embedding_dim
-            break
         if self.agg_type == "cat":
-            return esz * len(self.embeddings)
+            return self.esz * (len(self.embeddings) + (
+                len(self.numeric_features) if numeric_separate else 0))
         else:
-            return esz
+            return self.esz
