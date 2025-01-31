@@ -95,15 +95,6 @@ class TrxEncoderCat(TrxEncoderBase):
 
         self.agg_type = agg_type  
 
-    # @property
-    # def output_size(self):
-    #     """Returns hidden size of output representation
-    #     """
-    #     if self.agg_type == "cat":
-    #         return self.esz * (len(self.embeddings) + (len(self.numeric_features) if numeric_separate else 0))
-    #     else:
-    #         return self.esz
-
     def forward(self, x: PaddedBatch):
         processed_embeddings = []
 

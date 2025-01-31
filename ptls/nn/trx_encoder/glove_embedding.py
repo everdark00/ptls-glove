@@ -187,8 +187,52 @@ class GloveEmbedding():
         else:
             return self.model.weight
 
+
+class TransEmbedding(nn.Module):
+
+    def __init__(self, df=None, device='cpu', dropout=0.2, in_feats=82, cat_features=None):
+        """
+        Initialize the attribute embedding and feature learning compoent
+
+        :param df: the feature
+                :param device: where to train model
+                :param dropout: the dropout rate
+                :param in_feat: the shape of input feature in dimension 1
+                :param cat_feature: category features
+        """
+        super(TransEmbedding, self).__init__()
+        self.time_pe = PosEncoding(dim=in_feats, device=device, base=100)
+        
+        self.cat_table = nn.ModuleDict({col: nn.Embedding(max(df[col].unique(
+        ))+1, in_feats).to(device) for col in cat_features if col not in {"Labels", "Time"}})
+        self.label_table = nn.Embedding(3, in_feats, padding_idx=2).to(device)
+        self.time_emb = None
+        self.emb_dict = None
+        self.label_emb = None
+        self.cat_features = cat_features
+        self.forward_mlp = nn.ModuleList(
+            [nn.Linear(in_feats, in_feats) for i in range(len(cat_features))])
+        self.dropout = nn.Dropout(dropout)
+
+    def forward_emb(self, df):
+        if self.emb_dict is None:
+            self.emb_dict = self.cat_table
+        support = {col: self.emb_dict[col](
+            df[col]) for col in self.cat_features if col not in {"Labels", "Time"}}
+        
+        return support
+
+    def forward(self, df):
+        support = self.forward_emb(df)
+        output = 0
+        for i, k in enumerate(support.keys()):
+            support[k] = self.dropout(support[k])
+            support[k] = self.forward_mlp[i](support[k])
+            output = output + support[k]
+        return output
+
     
         
 
-    
+#https://github.com/AI4Risk/antifraud/blob/main/methods/gtan/gtan_main.py   
         
