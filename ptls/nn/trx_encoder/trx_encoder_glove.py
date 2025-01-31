@@ -61,8 +61,10 @@ class TrxEncoderCat(TrxEncoderBase):
                  ):
         super().__init__()
 
-        self.numeric_separate = num_embeddings
+        self.numeric_separate = numeric_separate
         self.numeric_features = numeric_features
+        self.device = 'cuda'
+        self.esz = 16
 
         for e in self.embeddings.values():
             self.esz = e.embedding_dim
@@ -91,7 +93,16 @@ class TrxEncoderCat(TrxEncoderBase):
             out_of_index=out_of_index,
         )
 
-        self.agg_type = agg_type    
+        self.agg_type = agg_type  
+
+    # @property
+    # def output_size(self):
+    #     """Returns hidden size of output representation
+    #     """
+    #     if self.agg_type == "cat":
+    #         return self.esz * (len(self.embeddings) + (len(self.numeric_features) if numeric_separate else 0))
+    #     else:
+    #         return self.esz
 
     def forward(self, x: PaddedBatch):
         processed_embeddings = []
@@ -99,8 +110,8 @@ class TrxEncoderCat(TrxEncoderBase):
         for fn in self.numeric_features:
             value = x.payload[f'{fn}_val']
             pos = x.payload[f'{fn}_pos'] 
-            numeric_embedding = torch.ones((pos.shape[0], pos.shape[1], self.esz)).double()
-            zero_mask = torch.ones(pos.shape[0], pos.shape[1])
+            numeric_embedding = torch.ones((pos.shape[0], pos.shape[1], self.esz)).double().to(self.device)
+            zero_mask = torch.ones(pos.shape[0], pos.shape[1]).double().to(self.device)
             for i in range(self.esz):
                 if i > 0:
                     numeric_embedding[:, :, i] *= zero_mask
@@ -123,15 +134,13 @@ class TrxEncoderCat(TrxEncoderBase):
             if self.agg_type == "mean":
                 out = out / n_emb
 
-        return PaddedBatch(out, x.seq_lens)
-
+        return PaddedBatch(out.float(), x.seq_lens)
 
     @property
     def output_size(self):
         """Returns hidden size of output representation
         """
         if self.agg_type == "cat":
-            return self.esz * (len(self.embeddings) + (
-                len(self.numeric_features) if numeric_separate else 0))
+            return self.esz * (len(self.embeddings) + (len(self.numeric_features) if self.numeric_separate else 0))
         else:
             return self.esz
