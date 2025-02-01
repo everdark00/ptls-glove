@@ -10,6 +10,7 @@ class KDiscretizer():
         '''
         self.emb_sz = emb_sz
         self.f_names = f_names
+        self.k_bins = k_bins
         self.disc = KBinsDiscretizer(
             n_bins=k_bins, encode='ordinal', strategy=d_type)
         self.emb_tresholds = {fn : [] for fn in self.f_names}

@@ -98,18 +98,19 @@ class TrxEncoderCat(TrxEncoderBase):
     def forward(self, x: PaddedBatch):
         processed_embeddings = []
 
-        for fn in self.numeric_features:
-            value = x.payload[f'{fn}_val']
-            pos = x.payload[f'{fn}_pos'] 
-            numeric_embedding = torch.ones((pos.shape[0], pos.shape[1], self.esz)).double().to(self.device)
-            zero_mask = torch.ones(pos.shape[0], pos.shape[1]).double().to(self.device)
-            for i in range(self.esz):
-                if i > 0:
-                    numeric_embedding[:, :, i] *= zero_mask
-                numeric_embedding[:, :, i][pos == i + 1] = value[pos == i + 1]
-                numeric_embedding[:, :, i][pos == 0] = 0
-                zero_mask *= (pos != i + 1)
-            processed_embeddings.append(numeric_embedding)
+        if self.numeric_separate:
+            for fn in self.numeric_features:
+                value = x.payload[f'{fn}_val']
+                pos = x.payload[f'{fn}_pos'] 
+                numeric_embedding = torch.ones((pos.shape[0], pos.shape[1], self.esz)).double().to(self.device)
+                zero_mask = torch.ones(pos.shape[0], pos.shape[1]).double().to(self.device)
+                for i in range(self.esz):
+                    if i > 0:
+                        numeric_embedding[:, :, i] *= zero_mask
+                    numeric_embedding[:, :, i][pos == i + 1] = value[pos == i + 1]
+                    numeric_embedding[:, :, i][pos == 0] = 0
+                    zero_mask *= (pos != i + 1)
+                processed_embeddings.append(numeric_embedding)
 
         for field_name in self.embeddings.keys():
             processed_embeddings.append(self.get_category_embeddings(x, field_name))
@@ -135,3 +136,35 @@ class TrxEncoderCat(TrxEncoderBase):
             return self.esz * (len(self.embeddings) + (len(self.numeric_features) if self.numeric_separate else 0))
         else:
             return self.esz
+
+
+class TrxEncoderTrans(nn.Module):
+    def __init__(self,  
+                 feature_names,
+                 cat_emb_sizes,
+                 out_emb_size,
+                 agg_type="cat"
+                 ):
+        super().__init__()
+
+        self.agg_type = agg_type
+        self.feature_names = feature_names
+        self.cat_embeddings = TransEmbedding(feature_names, cat_emb_sizes, out_emb_size, 'gpu')
+                
+    
+
+    def forward(self, x: PaddedBatch):
+        if self.agg_type == "cat":
+            out = []
+            for fe in self.feature_names:
+                out.append(self.embedding_vectors(x.payload[fe]))
+            out = torch.cat(out, dim=2)
+            return PaddedBatch(out, x.seq_lens)
+        else:
+            out = self.embedding_vectors(x.payload[self.feature_names[0]])
+            for fe in self.feature_names[1:]:
+                out += self.embedding_vectors(x.payload[fe])
+            if self.agg_type == "sum":
+                return PaddedBatch(out, x.seq_lens)
+            else:
+                return PaddedBatch(out/len(self.feature_names), x.seq_lens)

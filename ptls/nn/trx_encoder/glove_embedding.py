@@ -189,36 +189,23 @@ class GloveEmbedding():
 
 
 class TransEmbedding(nn.Module):
-
-    def __init__(self, df=None, device='cpu', dropout=0.2, in_feats=82, cat_features=None):
-        """
-        Initialize the attribute embedding and feature learning compoent
-
-        :param df: the feature
-                :param device: where to train model
-                :param dropout: the dropout rate
-                :param in_feat: the shape of input feature in dimension 1
-                :param cat_feature: category features
-        """
+    def __init__(self, feature_names, cat_emb_sizes, out_emb_size, device='cpu', dropout=0.2):
         super(TransEmbedding, self).__init__()
-        self.time_pe = PosEncoding(dim=in_feats, device=device, base=100)
         
-        self.cat_table = nn.ModuleDict({col: nn.Embedding(max(df[col].unique(
-        ))+1, in_feats).to(device) for col in cat_features if col not in {"Labels", "Time"}})
-        self.label_table = nn.Embedding(3, in_feats, padding_idx=2).to(device)
-        self.time_emb = None
-        self.emb_dict = None
-        self.label_emb = None
-        self.cat_features = cat_features
+        self.cat_table = nn.ModuleDict({col: nn.Embedding(cat_emb_sizes[i] + 1, 
+                            out_emb_size).to(device) for i, col in enumerate(feature_names)})
+
         self.forward_mlp = nn.ModuleList(
-            [nn.Linear(in_feats, in_feats) for i in range(len(cat_features))])
+            [nn.Linear(out_emb_size, out_emb_size) for i in range(len(feature_names))])
         self.dropout = nn.Dropout(dropout)
+        self.features = feature_names
+        self.emb_dict = None
 
     def forward_emb(self, df):
         if self.emb_dict is None:
             self.emb_dict = self.cat_table
         support = {col: self.emb_dict[col](
-            df[col]) for col in self.cat_features if col not in {"Labels", "Time"}}
+            df[col]) for col in self.features}
         
         return support
 
