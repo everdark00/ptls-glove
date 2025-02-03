@@ -4,7 +4,7 @@ import torch
 from torch import nn as nn
 
 from ptls.data_load.padded_batch import PaddedBatch
-from .glove_embedding import GloveEmbedding
+from .glove_embedding import GloveEmbedding, TransEmbedding
 from ptls.nn.trx_encoder.noisy_embedding import NoisyEmbedding
 from ptls.nn.trx_encoder.trx_encoder_base import TrxEncoderBase
 
@@ -140,16 +140,25 @@ class TrxEncoderCat(TrxEncoderBase):
 
 class TrxEncoderTrans(nn.Module):
     def __init__(self,  
-                 feature_names,
+                 feature_names, #must be cat or discretized num
                  cat_emb_sizes,
                  out_emb_size,
-                 agg_type="cat"
+                 agg_type="cat",
+                 numeric_separate=False,
+                 numeric_features=[],
                  ):
         super().__init__()
 
+        self.numeric_separate = numeric_separate
+        self.numeric_features = numeric_features if self.numeric_separate else []
+
+        self.device = 'cpu'
+        self.esz = out_emb_size
+
         self.agg_type = agg_type
+        
         self.feature_names = feature_names
-        self.cat_embeddings = TransEmbedding(feature_names, cat_emb_sizes, out_emb_size, 'gpu')
+        self.cat_embeddings = TransEmbedding(feature_names, cat_emb_sizes, out_emb_size, self.device)
                 
     
 
@@ -157,14 +166,27 @@ class TrxEncoderTrans(nn.Module):
         if self.agg_type == "cat":
             out = []
             for fe in self.feature_names:
-                out.append(self.embedding_vectors(x.payload[fe]))
+            out.append(self.cat_embeddings(x.payload))
+            for fe in self.numeric_features:
+                out.append(x.payload[fe])
             out = torch.cat(out, dim=2)
             return PaddedBatch(out, x.seq_lens)
         else:
-            out = self.embedding_vectors(x.payload[self.feature_names[0]])
-            for fe in self.feature_names[1:]:
-                out += self.embedding_vectors(x.payload[fe])
+            if self.numeric_separate:
+                raise Exception('cat and sum agg does not supports using non-disc numeric features')
+            out = self.cat_embeddings(x.payload[self.feature_names[0]])
+            for fe in self.feature_names:
+                out += self.cat_embeddings(x.payload[fe])
             if self.agg_type == "sum":
                 return PaddedBatch(out, x.seq_lens)
             else:
                 return PaddedBatch(out/len(self.feature_names), x.seq_lens)
+
+    @property
+    def output_size(self):
+        """Returns hidden size of output representation
+        """
+        if self.agg_type == "cat":
+            return self.esz * (len(self.cat_embeddings.features) + (len(self.numeric_features) if self.numeric_separate else 0))
+        else:
+            return self.esz

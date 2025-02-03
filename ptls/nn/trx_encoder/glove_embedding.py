@@ -204,13 +204,12 @@ class TransEmbedding(nn.Module):
     def forward_emb(self, df):
         if self.emb_dict is None:
             self.emb_dict = self.cat_table
-        support = {col: self.emb_dict[col](
-            df[col]) for col in self.features}
+        support = {col: self.emb_dict[col](df[col]) for col in self.features}
         
         return support
 
     def forward(self, df):
-        support = self.forward_emb(df)
+        support = self.forward_emb({i : df[i] for i in self.features})
         output = 0
         for i, k in enumerate(support.keys()):
             support[k] = self.dropout(support[k])
