@@ -12,10 +12,13 @@ from ptls.nn.trx_encoder.trx_encoder_base import TrxEncoderBase
 class TrxEncoderGlove(nn.Module):
     def __init__(self,  
                  glove_embedding : GloveEmbedding = None,
-                 agg_type="cat"
+                 agg_type="cat",
+                 numeric_separate = False,
+                 numeric_features=[]
                  ):
         super().__init__()
-
+        self.numeric_separate = numeric_separate
+        self.numeric_features = numeric_features
         self.agg_type = agg_type
         self.feature_names = glove_embedding.feature_names
         self.embedding_vectors = glove_embedding.get_vectors(agg_type="mean")
@@ -27,9 +30,14 @@ class TrxEncoderGlove(nn.Module):
             out = []
             for fe in self.feature_names:
                 out.append(self.embedding_vectors(x.payload[fe]))
+            if self.numeric_separate:
+                for fe in self.numeric_features:
+                    out.append(x.payload[fe])
             out = torch.cat(out, dim=2)
             return PaddedBatch(out, x.seq_lens)
         else:
+            if self.numeric_separate:
+                raise Exception("Only cat agg alowed with numeric separate")
             out = self.embedding_vectors(x.payload[self.feature_names[0]])
             for fe in self.feature_names[1:]:
                 out += self.embedding_vectors(x.payload[fe])
@@ -38,13 +46,12 @@ class TrxEncoderGlove(nn.Module):
             else:
                 return PaddedBatch(out/len(self.feature_names), x.seq_lens)
 
-
     @property
     def output_size(self):
         """Returns hidden size of output representation
         """
         if self.agg_type == "cat":
-            return self.embedding_vectors.weight.shape[1] * len(self.feature_names)
+            return self.embedding_vectors.weight.shape[1] * len(self.feature_names)  + (0 if not self.numeric_separate else len(self.numeric_features))
         else:
             return self.embedding_vectors.weight.shape[1]
 
@@ -166,7 +173,7 @@ class TrxEncoderTrans(nn.Module):
         if self.agg_type == "cat":
             out = []
             for fe in self.feature_names:
-            out.append(self.cat_embeddings(x.payload))
+                out.append(self.cat_embeddings(x.payload))
             for fe in self.numeric_features:
                 out.append(x.payload[fe])
             out = torch.cat(out, dim=2)
@@ -175,7 +182,7 @@ class TrxEncoderTrans(nn.Module):
             if self.numeric_separate:
                 raise Exception('cat and sum agg does not supports using non-disc numeric features')
             out = self.cat_embeddings(x.payload[self.feature_names[0]])
-            for fe in self.feature_names:
+            for fe in self.feature_names[1:]:
                 out += self.cat_embeddings(x.payload[fe])
             if self.agg_type == "sum":
                 return PaddedBatch(out, x.seq_lens)
