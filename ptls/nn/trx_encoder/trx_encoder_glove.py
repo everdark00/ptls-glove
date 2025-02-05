@@ -144,12 +144,18 @@ class TrxEncoderCat(TrxEncoderBase):
         else:
             return self.esz
 
+'''
+algos
 
+orig: obtain embeddings of size len(feature_names), sum them and sum with raw features 
+classic: num discr + different aggregations on obtained embeds
+'''
 class TrxEncoderTrans(nn.Module):
     def __init__(self,  
                  feature_names, #must be cat or discretized num
-                 cat_emb_sizes,
-                 out_emb_size,
+                 algo='orig',
+                 in_emb_sizes=[],
+                 out_emb_size=None,
                  agg_type="cat",
                  numeric_separate=False,
                  numeric_features=[],
@@ -160,40 +166,47 @@ class TrxEncoderTrans(nn.Module):
         self.numeric_features = numeric_features if self.numeric_separate else []
 
         self.device = 'cpu'
-        self.esz = out_emb_size
+        self.algo = algo
+        if self.algo == 'orig':
+            self.esz = len(feature_names)
+        else:
+            self.esz = out_emb_size
 
         self.agg_type = agg_type
         
         self.feature_names = feature_names
-        self.cat_embeddings = TransEmbedding(feature_names, cat_emb_sizes, out_emb_size, self.device)
+        self.embeddings = TransEmbedding(feature_names, in_emb_sizes, self.esz, self.device)
                 
     
 
     def forward(self, x: PaddedBatch):
-        if self.agg_type == "cat":
-            out = []
-            for fe in self.feature_names:
-                out.append(self.cat_embeddings(x.payload))
-            for fe in self.numeric_features:
-                out.append(x.payload[fe])
-            out = torch.cat(out, dim=2)
-            return PaddedBatch(out, x.seq_lens)
+        if self.algo == 'orig':
+            cat_emb = self.embeddings
         else:
-            if self.numeric_separate:
-                raise Exception('cat and sum agg does not supports using non-disc numeric features')
-            out = self.cat_embeddings(x.payload[self.feature_names[0]])
-            for fe in self.feature_names[1:]:
-                out += self.cat_embeddings(x.payload[fe])
-            if self.agg_type == "sum":
+            if self.agg_type == "cat":
+                out = []
+                for fe in self.feature_names:
+                    out.append(self.embeddings(x.payload))
+                for fe in self.numeric_features:
+                    out.append(x.payload[fe])
+                out = torch.cat(out, dim=2)
                 return PaddedBatch(out, x.seq_lens)
             else:
-                return PaddedBatch(out/len(self.feature_names), x.seq_lens)
+                if self.numeric_separate:
+                    raise Exception('cat and sum agg does not supports using non-disc numeric features')
+                out = self.embeddings(x.payload[self.feature_names[0]])
+                for fe in self.feature_names[1:]:
+                    out += self.embeddings(x.payload[fe])
+                if self.agg_type == "sum":
+                    return PaddedBatch(out, x.seq_lens)
+                else:
+                    return PaddedBatch(out/len(self.feature_names), x.seq_lens)
 
     @property
     def output_size(self):
         """Returns hidden size of output representation
         """
         if self.agg_type == "cat":
-            return self.esz * (len(self.cat_embeddings.features) + (len(self.numeric_features) if self.numeric_separate else 0))
+            return self.esz * (len(self.embeddings.features) + (len(self.numeric_features) if self.numeric_separate else 0))
         else:
             return self.esz

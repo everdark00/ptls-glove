@@ -21,7 +21,7 @@ class DeepTLFDisc():
         return list(sorted(bins_gap.bn.values)) + [tresholds[-1]]
 
 
-    def fit_transform(self, X):
+    def fit(self, X):
         split_conditions = self.tree_encoder.fit(X[self.params["features"]])
         for cond in split_conditions:
             self.tresholds[cond["feature"]].append(cond["threshold"])
@@ -34,7 +34,9 @@ class DeepTLFDisc():
                 else:
                     self.emb_tresholds[fn] = self.decrease_n_bins(self.tresholds[fn], self.params["emb_size"])
 
-        return None
+    def fit_transform(self, X, to_embeds=False):
+        self.fit(X)
+        return self.transform(X, to_embeds)
 
     def transform(self, X, to_embeds=False):
         if to_embeds:
@@ -58,7 +60,8 @@ class DeepTLFDisc():
         else:
             for fe in self.params["features_to_split"]:
                 ts = sorted(self.tresholds[fe])
-                for i in range(0, len(ts)):
+                X.loc[X[fe] < ts[0], fe] = 0
+                for i in range(1, len(ts)):
                     X.loc[(X[fe] > ts[i - 1]) & (X[fe] <= ts[i]), fe] = i
                 X.loc[X[fe] > ts[len(ts) -1], fe] = len(ts)
                 X[fe] = X[fe].astype("int64")

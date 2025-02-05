@@ -14,6 +14,7 @@ class KDiscretizer():
         self.disc = KBinsDiscretizer(
             n_bins=k_bins, encode='ordinal', strategy=d_type)
         self.emb_tresholds = {fn : [] for fn in self.f_names}
+        self.tresholds = {}
 
     def decrease_n_bins(self, tresholds, k_bins_required):
         bins_gap = pd.DataFrame({'bn' : tresholds[:-1], 
@@ -25,16 +26,26 @@ class KDiscretizer():
         bins_gap = bins_gap.dropna()
         return list(sorted(bins_gap.bn.values)) + [tresholds[-1]]
 
-    def fit_transform(self, X):
-        X.loc[:, self.f_names] = self.disc.fit_transform(X.loc[:, self.f_names]).astype(int)
-        tresholds = {self.disc.feature_names_in_[i] : self.disc.bin_edges_[i] for i in range(len(self.f_names))}
+    def fit(self, X):
+        self.disc.fit(X.loc[:, self.f_names])
+        self.tresholds = {self.disc.feature_names_in_[i] : self.disc.bin_edges_[i] for i in range(len(self.f_names))}
         for fn in self.f_names:
             if self.emb_sz is not None:
-                if len(tresholds[fn]) < self.emb_sz + 1:
+                if len(self.tresholds[fn]) < self.emb_sz + 1:
                     raise Exception(f"too few bins in {fn} discretization, raise k_bins or lower pruning rate")
                 else:
-                    self.emb_tresholds[fn] = self.decrease_n_bins(tresholds[fn], self.emb_sz + 2)
-        return X
+                    self.emb_tresholds[fn] = self.decrease_n_bins(self.tresholds[fn], self.emb_sz + 2)
+
+    def fit_transform(self, X, to_embeds=False):
+        self.disc.fit(X.loc[:, self.f_names])
+        self.tresholds = {self.disc.feature_names_in_[i] : self.disc.bin_edges_[i] for i in range(len(self.f_names))}
+        for fn in self.f_names:
+            if self.emb_sz is not None:
+                if len(self.tresholds[fn]) < self.emb_sz + 1:
+                    raise Exception(f"too few bins in {fn} discretization, raise k_bins or lower pruning rate")
+                else:
+                    self.emb_tresholds[fn] = self.decrease_n_bins(self.tresholds[fn], self.emb_sz + 2)
+        return self.transform(X, to_embeds)
 
     def transform(self, X, to_embeds=False):
         if to_embeds:

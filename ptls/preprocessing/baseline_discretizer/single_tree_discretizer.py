@@ -27,7 +27,7 @@ class SingleTreeDiscretizer():
         bins_gap = bins_gap.dropna()
         return list(sorted(bins_gap.bn.values)) + [tresholds[-1]]
 
-    def fit_transform(self, X):
+    def fit(self, X):
         for i, fn in enumerate(self.f_names): 
             if self.k_bins is not None:
                 ccp_alpha_min = 1e-8
@@ -89,7 +89,9 @@ class SingleTreeDiscretizer():
                 else:
                     self.emb_tresholds[fn] = self.decrease_n_bins(self.tresholds[fn], self.emb_sz + 2)
 
-        return self.transform(X)
+    def fit_transform(self, X, to_embeds=False):
+        self.fit(X)
+        return self.transform(X, to_embeds)
 
     def transform(self, X, to_embeds=False):
         for i, fn in enumerate(self.f_names):

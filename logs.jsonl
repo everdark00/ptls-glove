@@ -1,0 +1,11 @@
+{"assignment_id": "a1", "start_ts": 1675123200, "end_ts": 1675126800, "status": "APPROVED", "task_id": "t1", "worker_id": "worker_1", "skill_value": 50}
+{"assignment_id": "a2", "start_ts": 1675126800, "end_ts": 1675130400, "status": "EXPIRED", "task_id": "t2", "worker_id": "worker_2", "skill_value": 60}
+{"assignment_id": "a3", "start_ts": 1675130400, "end_ts": 1675134000, "status": "SKIPPED", "task_id": "t3", "worker_id": "worker_1", "skill_value": 80}
+{"assignment_id": "a4", "start_ts": 1675134000, "end_ts": 1675137600, "status": "APPROVED", "task_id": "t1", "worker_id": "worker_3", "skill_value": 100}
+{"assignment_id": "a5", "start_ts": 1675137600, "end_ts": 1675141200, "status": "APPROVED", "task_id": "t2", "worker_id": "worker_2", "skill_value": 70}
+{"assignment_id": "a6", "start_ts": 1675141200, "end_ts": 1675144800, "status": "EXPIRED", "task_id": "t3", "worker_id": "worker_3", "skill_value": 55}
+{"assignment_id": "a7", "start_ts": 1675144800, "end_ts": 1675148400, "status": "APPROVED", "task_id": "t1", "worker_id": "worker_2", "skill_value": 65}
+{"assignment_id": "a8", "start_ts": 1675148400, "end_ts": 1675152000, "status": "SKIPPED", "task_id": "t2", "worker_id": "worker_1", "skill_value": 90}
+{"assignment_id": "a9", "start_ts": 1675152000, "end_ts": 1675155600, "status": "APPROVED", "task_id": "t3", "worker_id": "worker_3", "skill_value": 60}
+{"assignment_id": "a10", "start_ts": 1675155600, "end_ts": 1675159200, "status": "EXPIRED", "task_id": "t1", "worker_id": "worker_2", "skill_value": 85}
+
