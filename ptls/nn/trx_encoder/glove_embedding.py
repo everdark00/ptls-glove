@@ -189,7 +189,7 @@ class GloveEmbedding():
 
 
 class TransEmbedding(nn.Module):
-    def __init__(self, feature_names, cat_emb_sizes, out_emb_size, device='cpu', dropout=0.2):
+    def __init__(self, feature_names, cat_emb_sizes, out_emb_size, device='cpu', dropout=0.2, algo='orig'):
         super(TransEmbedding, self).__init__()
         
         self.cat_table = nn.ModuleDict({col: nn.Embedding(cat_emb_sizes[i] + 1, 
@@ -209,12 +209,19 @@ class TransEmbedding(nn.Module):
         return support
 
     def forward(self, df):
-        support = self.forward_emb({i : df[i] for i in self.features})
-        output = 0
-        for i, k in enumerate(support.keys()):
-            support[k] = self.dropout(support[k])
-            support[k] = self.forward_mlp[i](support[k])
-            output = output + support[k]
+        support = self.forward_emb({i : df.payload[i] for i in self.features})
+        if algo == 'orig':
+            output = 0
+            for i, k in enumerate(support.keys()):
+                support[k] = self.dropout(support[k])
+                support[k] = self.forward_mlp[i](support[k])
+                output = output + support[k]
+        else:
+            output = []
+            for i, k in enumerate(support.keys()):
+                support[k] = self.dropout(support[k])
+                support[k] = self.forward_mlp[i](support[k])
+                output = output.append(support[k])
         return output
 
     

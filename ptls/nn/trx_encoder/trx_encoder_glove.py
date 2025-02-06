@@ -162,45 +162,47 @@ class TrxEncoderTrans(nn.Module):
                  ):
         super().__init__()
 
+        if 'algo' not in {'orig', 'classic'}:
+            raise Exception('algo must be "orig" or "classic"')
+
         self.numeric_separate = numeric_separate
         self.numeric_features = numeric_features if self.numeric_separate else []
 
         self.device = 'cpu'
         self.algo = algo
         if self.algo == 'orig':
-            self.esz = len(feature_names)
+            self.esz = len(feature_names) + len(numeric_features)
         else:
             self.esz = out_emb_size
 
         self.agg_type = agg_type
         
         self.feature_names = feature_names
-        self.embeddings = TransEmbedding(feature_names, in_emb_sizes, self.esz, self.device)
+        self.embeddings = TransEmbedding(feature_names, in_emb_sizes, self.esz, self.device, self.algo)
                 
     
 
     def forward(self, x: PaddedBatch):
         if self.algo == 'orig':
-            cat_emb = self.embeddings
+            out = self.embeddings(x)
+
+            out += torch.cat([x.payload[i] for i in self.numeric_features + self.feature_names], dim=2)
         else:
             if self.agg_type == "cat":
-                out = []
-                for fe in self.feature_names:
-                    out.append(self.embeddings(x.payload))
+                out = self.embeddings(x)
                 for fe in self.numeric_features:
                     out.append(x.payload[fe])
                 out = torch.cat(out, dim=2)
                 return PaddedBatch(out, x.seq_lens)
             else:
                 if self.numeric_separate:
-                    raise Exception('cat and sum agg does not supports using non-disc numeric features')
-                out = self.embeddings(x.payload[self.feature_names[0]])
-                for fe in self.feature_names[1:]:
-                    out += self.embeddings(x.payload[fe])
-                if self.agg_type == "sum":
-                    return PaddedBatch(out, x.seq_lens)
-                else:
-                    return PaddedBatch(out/len(self.feature_names), x.seq_lens)
+                    raise Exception('mean and sum agg does not supports using non-disc numeric features')
+                out = torch.sum(self.embeddings(x), dim=2)
+                
+                if self.agg_type == "mean":
+                    out = out / len(self.feature_names)
+                    
+        return PaddedBatch(out, x.seq_lens)
 
     @property
     def output_size(self):
