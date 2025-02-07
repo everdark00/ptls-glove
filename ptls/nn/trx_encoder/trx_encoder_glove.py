@@ -162,11 +162,11 @@ class TrxEncoderTrans(nn.Module):
                  ):
         super().__init__()
 
-        if 'algo' not in {'orig', 'classic'}:
+        if algo not in {'orig', 'classic'}:
             raise Exception('algo must be "orig" or "classic"')
 
         self.numeric_separate = numeric_separate
-        self.numeric_features = numeric_features if self.numeric_separate else []
+        self.numeric_features = numeric_features
 
         self.device = 'cpu'
         self.algo = algo
@@ -178,7 +178,7 @@ class TrxEncoderTrans(nn.Module):
         self.agg_type = agg_type
         
         self.feature_names = feature_names
-        self.embeddings = TransEmbedding(feature_names, in_emb_sizes, self.esz, self.device, self.algo)
+        self.embeddings = TransEmbedding(feature_names, in_emb_sizes, self.esz, self.device, 0.2, self.algo)
                 
     
 
@@ -186,12 +186,12 @@ class TrxEncoderTrans(nn.Module):
         if self.algo == 'orig':
             out = self.embeddings(x)
 
-            out += torch.cat([x.payload[i] for i in self.numeric_features + self.feature_names], dim=2)
+            out += torch.cat([x.payload[i].unsqueeze(2) for i in self.numeric_features + self.feature_names], dim=2)
         else:
             if self.agg_type == "cat":
                 out = self.embeddings(x)
                 for fe in self.numeric_features:
-                    out.append(x.payload[fe])
+                    out.append(x.payload[fe].unsqueeze(2))
                 out = torch.cat(out, dim=2)
                 return PaddedBatch(out, x.seq_lens)
             else:
@@ -208,7 +208,10 @@ class TrxEncoderTrans(nn.Module):
     def output_size(self):
         """Returns hidden size of output representation
         """
-        if self.agg_type == "cat":
-            return self.esz * (len(self.embeddings.features) + (len(self.numeric_features) if self.numeric_separate else 0))
-        else:
+        if self.algo == 'orig':
             return self.esz
+        else:
+            if self.agg_type == "cat":
+                return self.esz * (len(self.embeddings.features)) + (len(self.numeric_features) if self.numeric_separate else self.esz) 
+            else:
+                return self.esz

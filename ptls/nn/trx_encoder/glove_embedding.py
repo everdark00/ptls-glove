@@ -200,6 +200,7 @@ class TransEmbedding(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.features = feature_names
         self.emb_dict = None
+        self.algo = algo
 
     def forward_emb(self, df):
         if self.emb_dict is None:
@@ -210,7 +211,7 @@ class TransEmbedding(nn.Module):
 
     def forward(self, df):
         support = self.forward_emb({i : df.payload[i] for i in self.features})
-        if algo == 'orig':
+        if self.algo == 'orig':
             output = 0
             for i, k in enumerate(support.keys()):
                 support[k] = self.dropout(support[k])
