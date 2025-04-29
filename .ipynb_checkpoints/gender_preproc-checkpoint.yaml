@@ -1,0 +1,23 @@
+data_path: ../data/gender/
+trx_files: 
+    - transactions.csv
+col_client_id: customer_id
+cols_event_time: 
+    - '#gender'
+    - tr_datetime
+cols_category: 
+    - mcc_code 
+    - tr_type
+    - term_id
+cols_log_norm: 
+    - amount
+target_files: 
+    - gender_train.csv
+col_target: gender
+test_size: 0.1
+output_train_path: ../data/train_trx.parquet
+output_test_path: ../data/test_trx.parquet
+output_test_ids_path: ../data/test_ids.csv
+salt: 42
+log_file:
+print_dataset_info:

@@ -66,16 +66,10 @@ class TrxEncoderCat(TrxEncoderBase):
                  agg_type: str = "cat",
                  out_of_index: str = 'clip',
                  ):
-        super().__init__()
-
         self.numeric_separate = numeric_separate
         self.numeric_features = numeric_features
         self.device = 'cuda'
-        self.esz = 16
-
-        for e in self.embeddings.values():
-            self.esz = e.embedding_dim
-            break
+        self.esz = None
 
         noisy_embeddings = {}
         for emb_name, emb_props in embeddings.items():
@@ -99,6 +93,10 @@ class TrxEncoderCat(TrxEncoderBase):
             custom_embeddings={},
             out_of_index=out_of_index,
         )
+
+        for e in self.embeddings.values():
+            self.esz = e.embedding_dim
+            break
 
         self.agg_type = agg_type  
 
