@@ -54,7 +54,7 @@ data_module:
   valid_num_workers: 2
 
 trainer: 
-  gpus: 1
+  gpus: 0
   auto_select_gpus: false
   max_epochs: 150
   enable_checkpointing: false

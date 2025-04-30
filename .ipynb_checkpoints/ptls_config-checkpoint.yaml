@@ -1,0 +1,131 @@
+seed_everything: 42
+logger_name: mles_model
+model_path: ../coles_models/mles_model.p
+embed_file_name: mles_embeddings
+
+data_module:
+  _target_: ptls.frames.PtlsDataModule
+  train_data:
+    _target_: ptls.frames.coles.ColesDataset
+    splitter:
+      _target_: ptls.frames.coles.split_strategy.SampleSlices
+      split_count: 5
+      cnt_min: 15
+      cnt_max: 75
+    data:
+      _target_: ptls.data_load.datasets.AugmentationDataset
+      f_augmentations:
+        - _target_: ptls.data_load.augmentations.DropoutTrx
+          trx_dropout: 0.01
+      data:
+        _target_: ptls.data_load.datasets.MemoryMapDataset
+        data:
+          _target_: ptls.data_load.datasets.parquet_dataset.ParquetDataset
+          i_filters:
+            - _target_: ptls.data_load.iterable_processing.SeqLenFilter
+              min_seq_len: 25
+            - _target_: ptls.data_load.iterable_processing.FeatureFilter
+          data_files:
+            _target_: ptls.data_load.datasets.parquet_file_scan
+            file_path: ../data/train_trx.parquet
+            valid_rate: 0.05
+            return_part: train
+  valid_data:
+    _target_: ptls.frames.coles.ColesDataset
+    splitter:
+      _target_: ptls.frames.coles.split_strategy.SampleSlices
+      split_count: 5
+      cnt_min: 25
+      cnt_max: 100
+    data:
+      _target_: ptls.data_load.datasets.MemoryMapDataset
+      data:
+        _target_: ptls.data_load.datasets.parquet_dataset.ParquetDataset
+        i_filters:
+          - _target_: ptls.data_load.iterable_processing.FeatureFilter
+        data_files:
+          _target_: ptls.data_load.datasets.parquet_file_scan
+          file_path: ../data/train_trx.parquet
+          valid_rate: 0.05
+          return_part: valid
+  train_batch_size: 128
+  train_num_workers: 2
+  valid_batch_size: 1024
+  valid_num_workers: 2
+
+trainer: 
+  gpus: 0
+  auto_select_gpus: false
+  max_epochs: 150
+  enable_checkpointing: false
+
+pl_module:
+  _target_: ptls.frames.coles.CoLESModule
+  validation_metric:
+    _target_: ptls.frames.coles.metric.BatchRecallTopK
+    K: 4
+    metric: cosine
+  seq_encoder:
+    _target_: ptls.nn.RnnSeqEncoder
+    trx_encoder: 
+      _target_: ptls.nn.TrxEncoder
+      norm_embeddings: false
+      embeddings_noise: 0.003
+      embeddings:
+        mcc_code:
+          in: 200
+          out: 48
+        tr_type:
+          in: 100
+          out: 24
+      numeric_values: 
+        amount: identity
+    type: gru
+    hidden_size: 1024
+    bidir: false
+    trainable_starter: static
+  head:
+    _target_: ptls.nn.Head
+    use_norm_encoder: true
+    input_size: ${pl_module.seq_encoder.hidden_size}
+  loss:
+    _target_: ptls.frames.coles.losses.ContrastiveLoss
+    margin: 0.5
+    sampling_strategy:
+      _target_: ptls.frames.coles.sampling_strategies.HardNegativePairSelector
+      neg_count: 5
+  optimizer_partial:
+    _partial_: true
+    _target_: torch.optim.Adam
+    lr: 0.002
+    weight_decay: 0.0
+  lr_scheduler_partial:
+    _partial_: true
+    _target_: torch.optim.lr_scheduler.StepLR
+    step_size: 10
+    gamma: 0.9025
+
+inference:
+    seq_encoder:
+        _target_: torch.load
+        f: ../coles_models/mles_model.p
+
+    num_workers: 2
+    batch_size: 1000
+    
+    dataset:
+      _target_: ptls.data_load.datasets.ParquetDataset
+      data_files:
+        _target_: ptls.data_load.datasets.ParquetFiles
+        file_path:
+          - ../data/train_trx.parquet
+          - ../data/test_trx.parquet
+      i_filters:
+        - _target_: ptls.data_load.iterable_processing.FeatureFilter
+          keep_feature_names: customer_id
+        - _target_: ptls.data_load.iterable_processing.ISeqLenLimit
+          max_seq_len: 2000
+    
+    output:
+      path: data/${embed_file_name}
+      format: pickle
