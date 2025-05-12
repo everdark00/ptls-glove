@@ -1,0 +1,125 @@
+{
+  "0": {
+    "train": {
+      "path": "./embeddings_validation.work\\folds\\target_train_0.pickle",
+      "shape": [
+        6048,
+        2
+      ]
+    },
+    "valid": {
+      "path": "./embeddings_validation.work\\folds\\target_valid_0.pickle",
+      "shape": [
+        1512,
+        2
+      ]
+    },
+    "test": {
+      "path": "./embeddings_validation.work\\folds\\target_test.pickle",
+      "shape": [
+        840,
+        2
+      ]
+    }
+  },
+  "1": {
+    "train": {
+      "path": "./embeddings_validation.work\\folds\\target_train_1.pickle",
+      "shape": [
+        6048,
+        2
+      ]
+    },
+    "valid": {
+      "path": "./embeddings_validation.work\\folds\\target_valid_1.pickle",
+      "shape": [
+        1512,
+        2
+      ]
+    },
+    "test": {
+      "path": "./embeddings_validation.work\\folds\\target_test.pickle",
+      "shape": [
+        840,
+        2
+      ]
+    }
+  },
+  "2": {
+    "train": {
+      "path": "./embeddings_validation.work\\folds\\target_train_2.pickle",
+      "shape": [
+        6048,
+        2
+      ]
+    },
+    "valid": {
+      "path": "./embeddings_validation.work\\folds\\target_valid_2.pickle",
+      "shape": [
+        1512,
+        2
+      ]
+    },
+    "test": {
+      "path": "./embeddings_validation.work\\folds\\target_test.pickle",
+      "shape": [
+        840,
+        2
+      ]
+    }
+  },
+  "3": {
+    "train": {
+      "path": "./embeddings_validation.work\\folds\\target_train_3.pickle",
+      "shape": [
+        6048,
+        2
+      ]
+    },
+    "valid": {
+      "path": "./embeddings_validation.work\\folds\\target_valid_3.pickle",
+      "shape": [
+        1512,
+        2
+      ]
+    },
+    "test": {
+      "path": "./embeddings_validation.work\\folds\\target_test.pickle",
+      "shape": [
+        840,
+        2
+      ]
+    }
+  },
+  "4": {
+    "train": {
+      "path": "./embeddings_validation.work\\folds\\target_train_4.pickle",
+      "shape": [
+        6048,
+        2
+      ]
+    },
+    "valid": {
+      "path": "./embeddings_validation.work\\folds\\target_valid_4.pickle",
+      "shape": [
+        1512,
+        2
+      ]
+    },
+    "test": {
+      "path": "./embeddings_validation.work\\folds\\target_test.pickle",
+      "shape": [
+        840,
+        2
+      ]
+    }
+  },
+  "_split_info": {
+    "check_intersect": {
+      "fit_ids": true,
+      "test-train": {
+        "excluded_cnt": 840
+      }
+    }
+  }
+}

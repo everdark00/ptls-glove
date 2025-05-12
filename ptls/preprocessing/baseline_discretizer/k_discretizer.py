@@ -24,6 +24,7 @@ class KDiscretizer():
         for j in range(len(tresholds) + 1 - k_bins_required):
             bins_gap.iloc[j, :] = np.nan
         bins_gap = bins_gap.dropna()
+                                                                                                     
         return list(sorted(bins_gap.bn.values)) + [tresholds[-1]]
 
     def fit(self, X):

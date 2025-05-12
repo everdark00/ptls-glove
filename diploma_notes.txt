@@ -17,6 +17,9 @@ https://arxiv.org/pdf/2106.11959
 https://arxiv.org/pdf/1904.06690
 https://www.sciencedirect.com/science/article/abs/pii/S0957417423000635
 
+уменьшение размерности эмбеддинга текстовой фичи
+https://arxiv.org/pdf/2403.14001
+
 
 file:///C:/Users/peter/Downloads/applsci-12-09637-v2.pdf
 --------------------------------------------------------------------

@@ -54,8 +54,7 @@ data_module:
   valid_num_workers: 2
 
 trainer: 
-  gpus: 0
-  auto_select_gpus: false
+  accelerator: gpu
   max_epochs: 150
   enable_checkpointing: false
 
@@ -127,5 +126,5 @@ inference:
           max_seq_len: 2000
     
     output:
-      path: data/${embed_file_name}
+      path: ../data/embeddings/${embed_file_name}
       format: pickle

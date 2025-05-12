@@ -19,21 +19,22 @@ from dotsi import Dict
 #set_trace() 
 from functools import partial
 from ptls.nn import RnnSeqEncoder, TrxEncoder
-#from ptls.nn.trx_encoder.trx_encoder_glove import TrxEncoderGlove, TrxEncoderCat
-#from ptls.nn.trx_encoder import GloveEmbedding
-#from ptls.preprocessing.baseline_discretizer import KDiscretizer, SingleTreeDiscretizer
-#from ptls.preprocessing.deeptlf.src import DeepTLF
+from ptls.nn.trx_encoder.trx_encoder_glove import TrxEncoderGlove, TrxEncoderCat
+from ptls.nn.trx_encoder import GloveEmbedding
+from ptls.preprocessing.baseline_discretizer import KDiscretizer, SingleTreeDiscretizer
+from ptls.preprocessing.deeptlf.src import DeepTLF
 from ptls.frames.coles import CoLESModule
 from ptls.data_load.datasets import MemoryMapDataset
 from ptls.data_load.iterable_processing import SeqLenFilter
 from ptls.frames.coles import ColesDataset
 from ptls.frames.coles.split_strategy import SampleSlices
 from ptls.frames import PtlsDataModule
-#from ptls.frames import TestModule
+from ptls.frames import TestModule
 from ptls.frames.coles.metric import BatchRecallTopK
 from ptls.data_load.datasets import AugmentationDataset
 from ptls.data_load.augmentations import DropoutTrx
-#from ptls.preprocessing.deeptlf import DeepTLFDisc
+from ptls.preprocessing.deeptlf import DeepTLFDisc
+from ptls.preprocessing.time_preprocessing import TimePreprocessor  
 
 import ptls
 import torch
@@ -41,6 +42,7 @@ from torch import nn
 from ptls.preprocessing import PandasDataPreprocessor
 from sklearn.model_selection import train_test_split
 from lightgbm import LGBMClassifier
+from sklearn.preprocessing import MaxAbsScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, roc_auc_score
 from sklearn.model_selection import KFold
@@ -60,14 +62,14 @@ def prepare_data_age_bins_scenario():
 
     df_params = {
         "numeric_cols" : ["amount_rur"],
-        "cat_cols" : ["small_group"],
-        "date_col" : "trans_date",
+        "cat_cols" : ["trans_date", "small_group"],
+        "order_col" : "trans_date",
         "cat_unique" : [],
         "id_col" : "client_id",
         "target" : "bins"
-    }
-
-    for f in df_params["cat_cols"] + [df_params["date_col"]]:
+    } 
+ 
+    for f in df_params["cat_cols"]:
         df_params["cat_unique"].append(source_data[f].unique().shape[0])
 
     targets = pd.read_csv(os.path.join('../data/age_bins', 'train_target.csv'))    
@@ -77,23 +79,34 @@ def prepare_data_age_bins_scenario():
 def prepare_data_gender_scenario():
     data_path = '../data/gender'
 
-    source_data = pd.read_csv(os.path.join(data_path, 'transactions.csv'))
+    source_data = pd.read_csv(os.path.join(data_path, 'transactions_d.csv'))
     source_data = source_data.drop(columns=["term_id"]).rename(columns={'customer_id' : 'client_id'})
     if 'Unnamed: 0' in source_data.columns:
         source_data = source_data.drop(columns=['Unnamed: 0'])
 
-    source_data.tr_datetime = [int(i.split()[0]) for i in source_data.tr_datetime.values]
+    day = [int(i.split()[0]) for i in source_data.tr_datetime.values]
+    time = [i.split()[1] for i in source_data.tr_datetime.values]
+
+    padded_time = source_data['tr_datetime'].str.pad(15, 'left', '0')
+    day_part = padded_time.str[:6].astype(float)
+    time_part = pd.to_datetime(padded_time.str[7:], format='%H:%M:%S').values.astype('int64') // 1e9
+    time_part = time_part % (24 * 60 * 60) / (24 * 60 * 60)
+    
+    source_data.tr_datetime = day_part + time_part
+   # source_data.amount = np.sign(source_data.amount) * np.log(np.abs(source_data.amount) + 1.0)
 
     df_params = {
         "numeric_cols" : ["amount"],
         "cat_cols" : ["mcc_code", "tr_type"],
         "cat_unique" : [],
-        "date_col" : "tr_datetime",
+        "order_col" : "tr_datetime",
+        "time_col": "time",
+        "text_cols" : ['description'],
         "id_col" : "client_id",
         "target" : "gender"
     }
 
-    for f in df_params["cat_cols"] + [df_params["date_col"]]:
+    for f in df_params["cat_cols"]:
         df_params["cat_unique"].append(source_data[f].unique().shape[0])
 
     targets = pd.read_csv(os.path.join('../data/gender', 'gender_train.csv')).rename(columns={'customer_id' : 'client_id'})
@@ -133,10 +146,16 @@ def init_disc(params, df_params, config):
     return disc
 
 def get_basic_model_encoder(df_params, config):
-    embeddings={
-        'mcc_code': {'in': 200, 'out': 48},
-        'tr_type': {'in': 100, 'out': 24}
-    }
+    if df_params['target'] == 'gender':
+        embeddings={
+            'mcc_code': {'in': 200, 'out': 48},
+            'tr_type': {'in': 100, 'out': 24}
+        }
+    else:
+        embeddings={
+            'trans_date': {'in': 800, 'out': 16},
+            'small_group': {'in': 250, 'out': 16}
+        }
 
     trx_encoder_params = dict(
         embeddings_noise=0.003,
@@ -154,17 +173,19 @@ def get_basic_model_encoder(df_params, config):
     
     return seq_encoder
 
-def get_cat_encoder(df_params, agg_type, config, num_emb_flag=False):
+def get_cat_encoder(df_params, agg_type, config, num_emb_flag=False, text_embeddings_path=None):
     embeddings=dict()
-    for i, f in enumerate(df_params["cat_cols"] + [df_params["date_col"]]):
-        embeddings[f] = {'in' : df_params["cat_unique"][i], 'out' : config.model.embed_size}
+    for i, f in enumerate(df_params["cat_cols"]):
+        embeddings[f] = {'in' : df_params["cat_unique"][i], 'out' : config.model.embed_size}       
 
     trx_encoder_params = dict(
         embeddings=embeddings,
+        id_col_name=df_params['id_col'],
         embeddings_noise=0.003,
         agg_type=agg_type,
         numeric_separate=num_emb_flag,
-        numeric_features=df_params['numeric_cols']
+        numeric_features=df_params['numeric_cols'],
+        text_embeddings_path=text_embeddings_path
     )
     
     seq_encoder = RnnSeqEncoder(
@@ -180,7 +201,7 @@ def get_trans_encoder(df_params, agg_type, algo, config, numeric_separate=False)
     embeddings=dict()
 
     trx_encoder_params = dict(
-        feature_names=df_params['cat_cols'] + [df_params["date_col"]], 
+        feature_names=df_params['cat_cols'], 
         in_emb_sizes=df_params["cat_unique"],
         out_emb_size=config.model.embed_size,
         agg_type=agg_type,
@@ -257,7 +278,7 @@ def main(exp_config_path, exp_name, ds_name, mode):
 
     torch.set_float32_matmul_precision('high')
     
-    logging.info(f'experiment {exp_name} started')
+    logging.info(f'experiment {exp_name} started, mode: {mode}')
     with open(exp_config_path) as yf:
         config = Dict(yaml.full_load(yf))
 
@@ -270,6 +291,20 @@ def main(exp_config_path, exp_name, ds_name, mode):
     logging.info(f"{exp_name}: data loaded")
 
     exp = config.experiments[exp_name]
+
+    if 'baseline' in exp_name:
+        for fe in df_params["numeric_cols"]:
+            data[fe] = np.sign(data[fe]) * np.log(np.abs(data[fe]) + 1.0)
+
+    # if 'datetime_feats' in exp:
+    #     if ds_name == 'age_bins':
+    #         dt_preprocessor = TimePreprocessor(idcol=df_params["id_col"], 
+    #                   ordercol=df_params["order_col"],
+    #                   mode=exp['datetime_feats'])
+    #     elif ds_name == 'gender': 
+            
+    #     else:
+    #     raise Exception('Incorrect dataset name provided!')
 
     disc = None
     if 'disc' in exp:
@@ -290,13 +325,12 @@ def main(exp_config_path, exp_name, ds_name, mode):
         nn = []
         for fn in df_params['numeric_cols']:
             nn += [fn + '_val', fn + '_pos']
-
     if not os.path.isfile(f"{config.prep_datasets_path}/{exp_name}_dataset_{ds_name}.pkl"):
         if 'glove_config' in exp:
             if not exp['nsep']:
-                embedded_feats = df_params['numeric_cols'] + df_params['cat_cols'] + [df_params["date_col"]]
+                embedded_feats = df_params['numeric_cols'] + df_params['cat_cols']
             else:
-                embedded_feats = df_params['cat_cols'] + [df_params["date_col"]]
+                embedded_feats = df_params['cat_cols']
             folder_nm = f'{config.emb_path}/{exp_name}'[:-4] if exp['agg_type'] != 'mean' else f'{config.emb_path}/{exp_name}'[:-5]
             glove_embedding = GloveEmbedding(
                 feature_names=embedded_feats,
@@ -306,19 +340,20 @@ def main(exp_config_path, exp_name, ds_name, mode):
             )
             glove_embedding.load()
             data = glove_embedding.tokenize_data(data)
-    
+
         preprocessor = PandasDataPreprocessor(
             col_id=df_params['id_col'],
-            col_event_time=df_params['date_col'],
+            col_event_time=df_params['order_col'],
             event_time_transformation='none',
             category_transformation = 'none' if ('glove_config' in exp) else 'frequency',
             cols_category=df_params['cat_cols'],
             cols_numerical= nn if ('nemb' in exp and exp['nemb']) else df_params['numeric_cols'] ,
+            cols_identity = df_params['text_cols'],
             return_records=True,
         )
     
         dataset = preprocessor.fit_transform(data)
-    
+        
         dataset = sorted(dataset, key=lambda x: x[df_params['id_col']])
     
         with open(f"{config.prep_datasets_path}/{exp_name}_dataset_{ds_name}.pkl", "wb") as fl:
@@ -328,14 +363,29 @@ def main(exp_config_path, exp_name, ds_name, mode):
         with open(f"{config.prep_datasets_path}/{exp_name}_dataset_{ds_name}.pkl", "rb") as fl:
             dataset = pickle.load(fl)
         logging.info(f"{exp_name}: data has been already preprocessed, load data")
-    
-    #train, test = train_test_split(dataset, test_size=config.datasets[ds_name].test_split_coef, random_state=config.random_state)
-    with open('../data/train_trx_comp.parquet', 'rb') as fl:
-        train = pickle.load(fl)
-    with open('../data/test_trx_comp.parquet', 'rb') as fl:
-        test = pickle.load(fl)
+
+    set_trace()
+    train, test = train_test_split(dataset, test_size=config.datasets[ds_name].test_split_coef, random_state=config.random_state)
+    # with open('../data/train_trx_comp.parquet', 'rb') as fl:
+    #     train = pickle.load(fl)
+    # with open('../data/test_trx_comp.parquet', 'rb') as fl:
+    #     test = pickle.load(fl)
 
     train, val = train_test_split(train, test_size=config.datasets[ds_name].val_split_coef, random_state=config.random_state)
+
+    text_embeddings_path = None
+    if 'text_feats' in exp:
+        text_embeddings_path = os.path.isfile(f"{config.raw_data_path}/text_embeddings/{exp_name}_te_{ds_name}.parquet")
+        if not text_embeddings_path:
+            text_prep = TextPreprocessor(exp.text_feats.method, df_params['text_cols'], enable_pca=True, compressed_dim=48)
+    
+            train_text_embeds = text_prep.calc_embeddings(train, df_params['id_col'], fit_pca=True)
+            val_text_embeds = text_prep.calc_embeddings(val, df_params['id_col'], fit_pca=False)
+            test_text_embeds = text_prep.calc_embeddings(test, df_params['id_col'], fit_pca=False)
+    
+            pd.concat([train_text_embeds, val_text_embeds, test_text_embeds]).to_parquet(text_embeddings_path)
+
+            del text_prep
 
     del dataset, data
 
@@ -379,7 +429,7 @@ def main(exp_config_path, exp_name, ds_name, mode):
         )
     
         if exp.trx_encoder_type == 'cat':
-            seq_encoder = get_cat_encoder(df_params, agg_type=exp.agg_type, config=config, num_emb_flag=exp.nemb)
+            seq_encoder = get_cat_encoder(df_params, agg_type=exp.agg_type, config=config, num_emb_flag=exp.nemb, text_embeddings_path=text_embeddings_path)
         elif exp.trx_encoder_type == 'trans':
             seq_encoder = get_trans_encoder(df_params, agg_type=exp.agg_type, algo=exp.algo, config=config, numeric_separate=exp.nsep)
         elif exp.trx_encoder_type == 'glove':
@@ -434,9 +484,9 @@ def main(exp_config_path, exp_name, ds_name, mode):
     if mode == 'test' or mode == 'train-test':
         if 'glove_config' in exp:
             if not exp['nsep']:
-                embedded_feats = df_params['numeric_cols'] + df_params['cat_cols'] + [df_params["date_col"]]
+                embedded_feats = df_params['numeric_cols'] + df_params['cat_cols']
             else:
-                embedded_feats = df_params['cat_cols'] + [df_params["date_col"]]
+                embedded_feats = df_params['cat_cols']
             folder_nm = f'../glove_embeddings/{exp_name}'[:-4] if exp['agg_type'] != 'mean' else f'../glove_embeddings/{exp_name}'[:-5]
             glove_embedding = GloveEmbedding(
                 feature_names=embedded_feats,
@@ -539,6 +589,20 @@ def main(exp_config_path, exp_name, ds_name, mode):
             else:
                 raise Exception(f"No raw dataset with name {ds_name} exists!")
 
+            # with open('../data/embeddings/mles_embeddings.pickle', 'rb') as fl:
+            #     embeds = pickle.load(fl)
+            
+            # embeds.customer_id = embeds.customer_id.astype('int64')
+            
+            # target = pd.read_csv('../data/gender/gender_train.csv').drop(columns=['Unnamed: 0'])
+            # test_ids = pd.read_csv('../data/test_ids.csv')
+            # train_ids = pd.DataFrame({'customer_id' : list(set(embeds.customer_id.values) - set(test_ids.customer_id.values))})
+            
+            # embeds = embeds.merge(target, on='customer_id', how='inner')
+            
+            # train_df = embeds.merge(train_ids, on='customer_id', how='inner').rename(columns={'gender' : 'target'})
+            # test_df = embeds.merge(test_ids, on='customer_id', how='inner').rename(columns={'gender' : 'target'})
+
             train_df = train_df.set_index(np.arange(train_df.shape[0]))
             test_df = test_df.set_index(np.arange(test_df.shape[0]))
 
@@ -567,21 +631,33 @@ def main(exp_config_path, exp_name, ds_name, mode):
 
                 avg_metrics_val = {i : 0 for i in metrics.keys()}
                 avg_metrics_test = {i : 0 for i in metrics.keys()}
-                embed_columns = [x for x in train_df.columns if x.startswith('embed')]
+                embed_columns = [x for x in train_df.columns if x.startswith('emb')]
 
                 for train, val in tqdm(kfold.split(train_df)):
+                    x_train, y_train = train_df.loc[train, embed_columns], train_df.loc[train, 'target'].values
+                    x_val, y_val = train_df.loc[val, embed_columns], train_df.loc[val, 'target'].values
+                    x_test, y_test = test_df[embed_columns], test_df['target'].values
+
+                    transformer = MaxAbsScaler().fit(x_train)
+                    x_train = transformer.transform(x_train)
+                    x_val = transformer.transform(x_val)
+                    x_test = transformer.transform(x_test)
+
                     #set_trace()
-                    x_train, y_train = train_df.loc[train, embed_columns], train_df.loc[train, 'target']
-                    x_val, y_val = train_df.loc[val, embed_columns], train_df.loc[val, 'target']
-                    x_test, y_test = test_df[embed_columns], test_df['target']
                     
                     clf.fit(x_train, y_train)
 
                     for m_name, metric in metrics.items():
-                        avg_metrics_test[m_name] += metric(y_test, clf.predict(x_test)) / config.test.proxy_metrics.n_folds
+                        if m_name != 'roc_auc':
+                            avg_metrics_test[m_name] += metric(y_test, clf.predict(x_test)) / config.test.proxy_metrics.n_folds
+                        else:
+                            avg_metrics_test[m_name] += metric(y_test, clf.predict_proba(x_test)[:, 1]) / config.test.proxy_metrics.n_folds
                     if config.test.proxy_metrics.calc_on_val:
                         for m_name, metric in metrics.items():
-                            avg_metrics_val[m_name] += metric(y_val, clf.predict(x_val)) / config.test.proxy_metrics.n_folds
+                            if m_name != 'roc_auc':
+                                avg_metrics_val[m_name] += metric(y_val, clf.predict(x_val)) / config.test.proxy_metrics.n_folds
+                            else:
+                                avg_metrics_val[m_name] += metric(y_val, clf.predict_proba(x_val)[:, 1]) / config.test.proxy_metrics.n_folds
 
                 for m_name, m_value in avg_metrics_test.items():
                     res_metrics.append([exp_name, 'test', f"{m_name}_{model_name}", m_value])

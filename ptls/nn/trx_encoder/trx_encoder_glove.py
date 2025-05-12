@@ -58,8 +58,11 @@ class TrxEncoderGlove(nn.Module):
 class TrxEncoderCat(TrxEncoderBase):
     def __init__(self,  
                  embeddings,
+                 id_col_name,
                  numeric_separate=False,
                  numeric_features=None,
+                 text_embeddings_path=None,
+                 text_embedding_proj=False,
                  embeddings_noise=0.003,
                  emb_dropout=0,
                  spatial_dropout=False,
@@ -68,6 +71,10 @@ class TrxEncoderCat(TrxEncoderBase):
                  ):
         self.numeric_separate = numeric_separate
         self.numeric_features = numeric_features
+        self.text_embeddings_path = text_embeddings_path
+        self.text_embedding_proj = text_embedding_proj
+
+        self.id_col_name = id_col_name
         self.device = 'cuda'
         self.esz = None
 
@@ -98,6 +105,25 @@ class TrxEncoderCat(TrxEncoderBase):
             self.esz = e.embedding_dim
             break
 
+        self.text_embeddings = None
+        self.text_features = None
+        self.text_esz = None
+        if self.text_embeddings_path is not None:
+            self.text_embeddings = pd.read_parquet(self.text_embeddings_path).set_index(self.id_col_name)
+            self.text_features = self.text_embeddings.columns
+            self.text_esz = self.text_embeddings[self.text_features[0]][0].shape[1]
+
+            if self.text_embedding_proj:
+                proj_module = {
+                    fe: nn.Module(
+                        nn.Linear(self.text_esz, self.esz),
+                        nn.ReLU()
+                    )
+                }
+            else:
+                if agg_type != 'cat' and self.text_esz != self.esz:
+                    raise Exception(f'General rep size is {self.esz} and text embedding size is {self.text_esz}. Add proj layer or change embedding dimensionality!')
+
         self.agg_type = agg_type  
 
     def forward(self, x: PaddedBatch):
@@ -116,6 +142,15 @@ class TrxEncoderCat(TrxEncoderBase):
                     numeric_embedding[:, :, i][pos == 0] = 0
                     zero_mask *= (pos != i + 1)
                 processed_embeddings.append(numeric_embedding)
+
+        if self.text_embeddings is not None:
+            ids = []
+            for e in x:
+                ids.append(x.payload[self.id_col_name])
+            if self.text_embedding_proj:
+                
+            else:
+                processed_embeddings.append(torch.tensor())
 
         for field_name in self.embeddings.keys():
             processed_embeddings.append(self.get_category_embeddings(x, field_name))
