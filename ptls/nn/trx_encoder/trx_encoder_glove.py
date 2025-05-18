@@ -2,9 +2,14 @@ from collections import OrderedDict
 
 import torch
 from torch import nn as nn
+import pandas as pd
+import numpy as np
+
+from pdb import set_trace
 
 from ptls.data_load.padded_batch import PaddedBatch
 from .glove_embedding import GloveEmbedding, TransEmbedding
+from .time2vec import Time2VecModule
 from ptls.nn.trx_encoder.noisy_embedding import NoisyEmbedding
 from ptls.nn.trx_encoder.trx_encoder_base import TrxEncoderBase
 
@@ -23,8 +28,6 @@ class TrxEncoderGlove(nn.Module):
         self.feature_names = glove_embedding.feature_names
         self.embedding_vectors = glove_embedding.get_vectors(agg_type="mean")
                 
-    
-
     def forward(self, x: PaddedBatch):
         if self.agg_type == "cat":
             out = []
@@ -60,9 +63,14 @@ class TrxEncoderCat(TrxEncoderBase):
                  embeddings,
                  id_col_name,
                  numeric_separate=False,
+                 numeric_id=False,
                  numeric_features=None,
+                 time_features=None,
+                 time_proj_method='plain',
+                 time2vec_hs=0,
                  text_embeddings_path=None,
                  text_embedding_proj=False,
+                 text_embeddings_sz=0,
                  embeddings_noise=0.003,
                  emb_dropout=0,
                  spatial_dropout=False,
@@ -71,12 +79,22 @@ class TrxEncoderCat(TrxEncoderBase):
                  ):
         self.numeric_separate = numeric_separate
         self.numeric_features = numeric_features
+        self.numeric_id = numeric_id
+
         self.text_embeddings_path = text_embeddings_path
+        self.text_esz = text_embeddings_sz
         self.text_embedding_proj = text_embedding_proj
+
+        self.time_features=time_features
+        self.time_proj_method = time_proj_method
+        self.time2vec_hs=time2vec_hs
 
         self.id_col_name = id_col_name
         self.device = 'cuda'
         self.esz = None
+
+        if self.numeric_separate and self.numeric_id:
+            raise Exception(f'"numeric_id" and "numeric_separate" could not be applied together!')
 
         noisy_embeddings = {}
         for emb_name, emb_props in embeddings.items():
@@ -101,33 +119,64 @@ class TrxEncoderCat(TrxEncoderBase):
             out_of_index=out_of_index,
         )
 
-        for e in self.embeddings.values():
-            self.esz = e.embedding_dim
-            break
+        if not self.numeric_id:
+            for e in self.embeddings.values():
+                self.esz = e.embedding_dim
+                break
+        else:
+            self.esz = 0
+            for e in self.embeddings.values():
+                self.esz += e.embedding_dim
 
-        self.text_embeddings = None
-        self.text_features = None
-        self.text_esz = None
+        self.text_embeddings = dict()
+        self.text_proj_module = nn.ModuleDict()
         if self.text_embeddings_path is not None:
-            self.text_embeddings = pd.read_parquet(self.text_embeddings_path).set_index(self.id_col_name)
-            self.text_features = self.text_embeddings.columns
-            self.text_esz = self.text_embeddings[self.text_features[0]][0].shape[1]
+            text_embeddings_vectors = torch.load(self.text_embeddings_path, weights_only=True)
+            for fn in text_embeddings_vectors.keys():
+                self.text_embeddings[fn] = nn.Embedding(num_embeddings=text_embeddings_vectors[fn].shape[0], embedding_dim=self.text_esz)
+                self.text_embeddings[fn].weight = nn.Parameter(text_embeddings_vectors[fn])
+                self.text_embeddings[fn].weight.requires_grad = False
+                self.text_embeddings[fn].to(self.device)
 
             if self.text_embedding_proj:
-                proj_module = {
-                    fe: nn.Module(
-                        nn.Linear(self.text_esz, self.esz),
-                        nn.ReLU()
-                    )
-                }
+                for fn in text_embeddings_vectors.keys():
+                    self.text_proj_module[fn] = nn.Sequential(
+                            nn.Linear(self.text_esz, self.esz),
+                            nn.ReLU()
+                        ).to(self.device)
+                self.text_esz = self.esz
             else:
                 if agg_type != 'cat' and self.text_esz != self.esz:
                     raise Exception(f'General rep size is {self.esz} and text embedding size is {self.text_esz}. Add proj layer or change embedding dimensionality!')
+            
+            del text_embeddings_vectors
+
+        self.time_proj_module = nn.ModuleDict()
+        self.time_out_size=self.esz
+        if len(time_features) == 0:
+            self.time_out_size=0
+        if self.time_proj_method != 'plain':
+            if len(time_features) == 0:
+                raise Exception('ERROR t2v time encoding initiated, but passed list of time features is empty')
+            for fn in self.time_features:
+                self.time_proj_module[fn] = Time2VecModule('sin', self.time2vec_hs).to(self.device)
+
+#            if not self.numeric_id:
+            self.time_out_size =  self.esz if (not self.numeric_id) else (self.esz // len(self.embeddings.keys()))
+            self.time_proj_module['proj'] = nn.Sequential(
+                            nn.Linear(self.time2vec_hs * len(self.time_features), self.time_out_size),
+                            nn.ReLU()
+                        ).to(self.device)
+
 
         self.agg_type = agg_type  
 
     def forward(self, x: PaddedBatch):
         processed_embeddings = []
+
+        if self.numeric_id:
+            for fn in self.numeric_features:
+                processed_embeddings.append(x.payload[fn].unsqueeze(2))
 
         if self.numeric_separate:
             for fn in self.numeric_features:
@@ -143,14 +192,21 @@ class TrxEncoderCat(TrxEncoderBase):
                     zero_mask *= (pos != i + 1)
                 processed_embeddings.append(numeric_embedding)
 
-        if self.text_embeddings is not None:
-            ids = []
-            for e in x:
-                ids.append(x.payload[self.id_col_name])
-            if self.text_embedding_proj:
-                
-            else:
-                processed_embeddings.append(torch.tensor())
+        if self.text_embeddings_path is not None:
+            for fn in self.text_embeddings.keys():
+                if self.text_embedding_proj:
+                    processed_embeddings.append(self.text_proj_module[fn](self.text_embeddings[fn](x.payload['text_emb_id'])))
+                else:
+                    processed_embeddings.append(self.text_embeddings[fn](x.payload['text_emb_id']))
+
+        if self.time_proj_method != 'plain':
+            time_vectors = []
+            for fn in self.time_features:
+                time_vectors.append(self.time_proj_module[fn](x.payload[fn].view(-1, 1).float()))
+            #if not self.numeric_id:
+            processed_embeddings.append(self.time_proj_module['proj'](torch.cat(time_vectors, dim=1)).view(-1, x.payload[fn].shape[1], self.time_out_size))
+            #else:
+            #    processed_embeddings.append((torch.cat(time_vectors, dim=1)).view(-1, x.payload[fn].shape[1], self.time2vec_hs * len(self.time_features)))
 
         for field_name in self.embeddings.keys():
             processed_embeddings.append(self.get_category_embeddings(x, field_name))
@@ -158,6 +214,8 @@ class TrxEncoderCat(TrxEncoderBase):
         if self.agg_type == "cat":
             out = torch.cat(processed_embeddings, dim=2)
         else:
+            if self.numeric_id:
+                raise Exception(f'"numeric_id" param is True, numeric features are not discretized and embedded, only CAT agg allowed')
             n_emb = 0
             out = None
             for i, emb in enumerate(processed_embeddings):
@@ -165,7 +223,7 @@ class TrxEncoderCat(TrxEncoderBase):
                 n_emb += 1
             if self.agg_type == "mean":
                 out = out / n_emb
-
+        
         return PaddedBatch(out.float(), x.seq_lens)
 
     @property
@@ -173,7 +231,10 @@ class TrxEncoderCat(TrxEncoderBase):
         """Returns hidden size of output representation
         """
         if self.agg_type == "cat":
-            return self.esz * (len(self.embeddings) + (len(self.numeric_features) if self.numeric_separate else 0))
+            if self.numeric_id is None:
+                return self.esz * (len(self.embeddings) + (len(self.numeric_features) if self.numeric_separate else 0)) + self.text_esz * len(self.text_embeddings.keys()) + self.time_out_size
+            else:
+                return self.esz + len(self.numeric_features) + self.text_esz * len(self.text_embeddings.keys()) + self.time_out_size
         else:
             return self.esz
 

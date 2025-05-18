@@ -94,21 +94,23 @@ datasets:
         val_split_coef: 0.05
 
 experiments:
-    baseline_with_text:
+    baseline_with_text_fasttext:
         trx_encoder_type: basic
         nsep: true
         datetime_feats:
             mode: num
             time_embedding: false
         text_feats:
-            method: rubert_output
-    quant_100_dist_common_emb_cat:
+            method: avg_pooling_fasttext
+    quant_100_dist_common_emb_fasttext_cat:
         trx_encoder_type: cat
         agg_type : cat 
         disc:
             type: quantile
             k_bins: 100
             fixed_emb: false
+        text_feats:
+            method: avg_pooling_fasttext
         nemb: false
     quant_num_emb_dist_common_emb_cat:
         trx_encoder_type: cat

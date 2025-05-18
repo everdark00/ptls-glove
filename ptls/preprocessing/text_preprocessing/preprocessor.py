@@ -3,6 +3,14 @@ from sklearn.decomposition import PCA
 from gensim.models import KeyedVectors
 from huggingface_hub import hf_hub_download
 from sentence_transformers import SentenceTransformer, util
+from tqdm.notebook import tqdm
+import fasttext
+import re
+import torch
+from pdb import set_trace
+
+import pandas as pd
+import numpy as np
 
 
 class TextPreprocessor:
@@ -34,63 +42,74 @@ class TextPreprocessor:
             for fe in self.feature_names:
                 self.pca_models[fe] =  PCA(n_components=self.compressed_dim)
 
-        self.unk_str = None
+        self.unk_str = dict()
+        self.embed_idx = 1
 
-    def calc_embeddings(self, X, idcol_name, fit_pca=True):
-        ids = []
-        for sample in X:
-            ids.append(sample[idcol_name])
-        
+    def calc_embeddings(self, X, fit_pca=True):   
         embeds = dict()
         for fe in self.feature_names:
+            zero_embed = []
+            sents = X[fe].values
             def vclear(s):
-                s = " ".join(s[fe])
+                s = " ".join(s)
                 return re.sub(r"[^а-яА-Я0-9\s]+|\s{2,}", " ", s.lower()).strip().split(" ")
 
             if self.method == 'rubert_output':
+                batch_size = 10000
+                embeds_list = []
 
-                def get_emb(sample):
-                    return self.model.encode(sample[fe])
+                for i in range(0, (X.shape[0] // batch_size) + 1):
+                    if i * batch_size == X.shape[0]:
+                        break
+                    embeds_list.append(self.model.encode(sents[i * batch_size : min((i + 1) * batch_size, X.shape[0])]))
 
-                embeds[fe] = list(map(get_emb, X))
+                if self.embed_idx  == 1:
+                    zero_embed = list(self.model.encode([""]))
+
+                sents = zero_embed + list(np.concatenate(embeds_list))
+
             elif self.method == 'avg_pooling_w2v':
-                if self.unk_str is None:
-                    vocabulary = list(set(np.concatenate(list(map(vclear, X)))) - {"", " "})
-                    self.unk_str = self.unk_detection(vocabulary)
+                if fe not in self.unk_str:
+                    vocabulary = list(set(vclear(sents)) - {"", " "})
+                    self.unk_str[fe] = self.unk_detection(vocabulary)
 
                 def sclear(s):
-                    sts = []
-                    for st in s[fe]:
-                        st = re.sub(r"[^а-яА-Я0-9\s]+|\s{2,}", " ", st.lower())
-                        if self.unk_str != '':
-                            st = re.sub(rf"{self.unk_str}", "unk", st)
-                        sts.append(np.mean(self.model[*re.sub(r"\s+", " ", st).strip().split(" ")], axis=0))
-                    return sts
+                    s = re.sub(r"[^а-яА-Я0-9\s]+|\s{2,}", " ", s.lower())
+                    if self.unk_str[fe] != '':
+                        s = re.sub(rf"{self.unk_str[fe]}", "unk", s)
+                    return np.mean(self.model[*re.sub(r"\s+", " ", s).strip().split(" ")], axis=0)
 
-                embeds[fe] = list(map(sclear, X))
+                if self.embed_idx  == 1:
+                    zero_embed = [self.model['unk']] 
+
+                sents = zero_embed + list(map(sclear, sents))
 
             elif self.method == 'avg_pooling_fasttext':
-                if self.unk_str is None:
-                    vocabulary = list(set(np.concatenate(list(map(vclear, X)))) - {"", " "})
-                    self.unk_str = self.unk_detection(vocabulary)
+                if fe not in self.unk_str:
+                    vocabulary = list(set(vclear(sents)) - {"", " "})
+                    self.unk_str[fe] = self.unk_detection(vocabulary)
 
                 def sclear(s):
-                    sts = []
-                    for st in s[fe]:
-                        st = re.sub(r"[^а-яА-Я0-9\s]+|\s{2,}", " ", st.lower())
-                        if self.unk_str != '':
-                            st = re.sub(rf"{self.unk_str}", "unk", st)
-                        sts.append(self.model.get_sentence_vector(re.sub(r"\s+", " ", st).strip()))
-                    return sts
+                    s = re.sub(r"[^а-яА-Я0-9\s]+|\s{2,}", " ", s.lower())
+                    if self.unk_str[fe] != '':
+                        s = re.sub(rf"{self.unk_str[fe]}", "unk", s)
+                    return self.model.get_sentence_vector(re.sub(r"\s+", " ", s).strip())
 
-                embeds[fe] = list(map(sclear, X))
+                if self.embed_idx == 1:
+                    zero_embed = [self.model.get_sentence_vector("")]
+
+                sents = zero_embed + list(map(sclear, sents))
 
             if self.enable_pca:
                 if fit_pca:
-                    self.pca_models[fe].fit(np.concatenate(embeds[fe]))
-                embeds[fe] = list(map(self.pca_models[fe].transform, embeds[fe]))
+                    self.pca_models[fe].fit(sents)
+                embeds[fe] = torch.tensor(self.pca_models[fe].transform(sents))
+            else:
+                embeds[fe] = torch.tensor(np.array(sents))
 
-        return pd.DataFrame({idcol_name : ids} | embeds)
+        self.embed_idx += X.shape[0]
+
+        return embeds
 
     def unk_detection(self, voc):
         unk_str = ""

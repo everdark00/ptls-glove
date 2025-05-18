@@ -34,7 +34,8 @@ from ptls.frames.coles.metric import BatchRecallTopK
 from ptls.data_load.datasets import AugmentationDataset
 from ptls.data_load.augmentations import DropoutTrx
 from ptls.preprocessing.deeptlf import DeepTLFDisc
-from ptls.preprocessing.time_preprocessing import TimePreprocessor  
+from ptls.preprocessing.time_preprocessing import TimePreprocessor 
+from ptls.preprocessing.text_preprocessing import TextPreprocessor  
 
 import ptls
 import torch
@@ -79,13 +80,12 @@ def prepare_data_age_bins_scenario():
 def prepare_data_gender_scenario():
     data_path = '../data/gender'
 
-    source_data = pd.read_csv(os.path.join(data_path, 'transactions_d.csv'))
+    source_data = pd.read_csv(os.path.join(data_path, 'transactions.csv'))
     source_data = source_data.drop(columns=["term_id"]).rename(columns={'customer_id' : 'client_id'})
     if 'Unnamed: 0' in source_data.columns:
         source_data = source_data.drop(columns=['Unnamed: 0'])
 
-    day = [int(i.split()[0]) for i in source_data.tr_datetime.values]
-    time = [i.split()[1] for i in source_data.tr_datetime.values]
+    source_data['time'] = [i.split()[1] for i in source_data.tr_datetime.values]
 
     padded_time = source_data['tr_datetime'].str.pad(15, 'left', '0')
     day_part = padded_time.str[:6].astype(float)
@@ -93,7 +93,6 @@ def prepare_data_gender_scenario():
     time_part = time_part % (24 * 60 * 60) / (24 * 60 * 60)
     
     source_data.tr_datetime = day_part + time_part
-   # source_data.amount = np.sign(source_data.amount) * np.log(np.abs(source_data.amount) + 1.0)
 
     df_params = {
         "numeric_cols" : ["amount"],
@@ -115,7 +114,7 @@ def prepare_data_gender_scenario():
     return source_data, targets, df_params
 
 def init_disc(params, df_params, config):
-    emb_size = None
+    emb_size = None 
     if params.fixed_emb:
         emb_size = config.model.embed_size
         
@@ -145,7 +144,7 @@ def init_disc(params, df_params, config):
         raise Exception(f'No discretizer with name {params.type} availible')
     return disc
 
-def get_basic_model_encoder(df_params, config):
+def get_basic_model_encoder(df_params, config, exp, text_embed_path=None, time_preprocessor=None):
     if df_params['target'] == 'gender':
         embeddings={
             'mcc_code': {'in': 200, 'out': 48},
@@ -157,35 +156,35 @@ def get_basic_model_encoder(df_params, config):
             'small_group': {'in': 250, 'out': 16}
         }
 
-    trx_encoder_params = dict(
-        embeddings_noise=0.003,
-        numeric_values=dict([(fe, 'identity') for fe in df_params['numeric_cols']]),
-        embeddings=embeddings
-    )
-    
-    seq_encoder = RnnSeqEncoder(
-        trx_encoder=TrxEncoder(**trx_encoder_params),
-        hidden_size=config.model.hidden_size,
-        type=config.model.seq_encoder_type,
-        bidir=False,
-        trainable_starter='static'
-    )
-    
-    return seq_encoder
+    if ('text_feats' in exp) and (not exp.text_feats.enable_pca):
+        if exp.text_feats.method == 'rubert_output':
+            text_embeddings_sz = 312
+        else:
+            text_embeddings_sz = 300
+    else:
+        text_embeddings_sz=config.model.embed_size
 
-def get_cat_encoder(df_params, agg_type, config, num_emb_flag=False, text_embeddings_path=None):
-    embeddings=dict()
-    for i, f in enumerate(df_params["cat_cols"]):
-        embeddings[f] = {'in' : df_params["cat_unique"][i], 'out' : config.model.embed_size}       
+    if 'time_feats' in exp:
+        time_proj_method = exp.time_feats.method
+        time2vec_hs = exp.time_feats.time2vec_hs
+    else:
+        time_proj_method = 'plain'
+        time2vec_hs=0
 
     trx_encoder_params = dict(
         embeddings=embeddings,
         id_col_name=df_params['id_col'],
         embeddings_noise=0.003,
-        agg_type=agg_type,
-        numeric_separate=num_emb_flag,
+        agg_type='cat',
+        numeric_separate=False,
+        numeric_id=True,
         numeric_features=df_params['numeric_cols'],
-        text_embeddings_path=text_embeddings_path
+        time_features=df_params['time_cols'],
+        time_proj_method=time_proj_method,
+        time2vec_hs=time2vec_hs,
+        text_embeddings_path=text_embed_path,
+        text_embedding_proj=False,
+        text_embeddings_sz=text_embeddings_sz
     )
     
     seq_encoder = RnnSeqEncoder(
@@ -195,6 +194,54 @@ def get_cat_encoder(df_params, agg_type, config, num_emb_flag=False, text_embedd
         bidir=False,
         trainable_starter='static'
     )
+    
+    return seq_encoder
+
+def get_cat_encoder(df_params, agg_type, config, exp, num_emb_flag=False, text_embed_path=None, time_preprocessor=None):
+    embeddings=dict()
+    for i, f in enumerate(df_params["cat_cols"]):
+        embeddings[f] = {'in' : df_params["cat_unique"][i], 'out' : config.model.embed_size}
+
+    if ('text_feats' in exp) and (not exp.text_feats.enable_pca):
+        text_embedding_proj=True
+        if exp.text_feats.method == 'rubert_output':
+            text_embeddings_sz = 312
+        else:
+            text_embeddings_sz = 300
+    else:
+        text_embedding_proj=False
+        text_embeddings_sz=config.model.embed_size
+
+    if 'time_feats' in exp:
+        time_proj_method = exp.time_feats.method
+        time2vec_hs = exp.time_feats.time2vec_hs
+    else:
+        time_proj_method = 'plain'
+        time2vec_hs=0
+
+    trx_encoder_params = dict(
+        embeddings=embeddings,
+        id_col_name=df_params['id_col'],
+        embeddings_noise=0.003,
+        agg_type=agg_type,
+        numeric_separate=num_emb_flag,
+        numeric_features=df_params['numeric_cols'],
+        time_features=df_params['time_cols'],
+        time_proj_method=time_proj_method,
+        time2vec_hs=time2vec_hs,
+        text_embeddings_path=text_embed_path,
+        text_embedding_proj=text_embedding_proj,
+        text_embeddings_sz=text_embeddings_sz
+    )
+    
+    seq_encoder = RnnSeqEncoder(
+        trx_encoder=TrxEncoderCat(**trx_encoder_params),
+        hidden_size=config.model.hidden_size,
+        type=config.model.seq_encoder_type,
+        bidir=False,
+        trainable_starter='static'
+    )
+    
     return seq_encoder
 
 def get_trans_encoder(df_params, agg_type, algo, config, numeric_separate=False):
@@ -306,12 +353,50 @@ def main(exp_config_path, exp_name, ds_name, mode):
     #     else:
     #     raise Exception('Incorrect dataset name provided!')
 
+    time_preprocessor = None
+    df_params['time_cols'] = []
+    if 'time_feats' in exp:
+        '''
+        exp.time_feats.method might be:
+            - "time2vec_full": all features goes through proj
+            - "time2vec_part": only cyclic features goes through proj (ordercol & unix_time as num/disc(num) features)
+            - "plain": all features go as num/disc(num)/cat
+        '''
+        time_preprocessor = TimePreprocessor(
+            idcol=df_params["id_col"], 
+            ordercol=df_params["order_col"], 
+            datecol=df_params["date_col"] if "date_col" in df_params else None, 
+            timecol=df_params["time_col"] if "time_col" in df_params else None, 
+            scale_numeric=exp.time_feats.scale_numeric
+        )
+
+        data = time_preprocessor.fit_transform(data)
+
+        if exp.time_feats.method == 'plain':
+            df_params['numeric_cols'] += time_preprocessor.num_features
+            df_params['cat_cols'] += time_preprocessor.cat_features
+            df_params['time_cols'] = []
+        elif exp.time_feats.method == 'time2vec_part':
+            df_params['numeric_cols'] += sorted(list(set(time_preprocessor.num_features) & set(time_preprocessor.nonperiodic)))
+            df_params['cat_cols'] += sorted(list(set(time_preprocessor.cat_features) & set(time_preprocessor.nonperiodic)))
+            df_params['time_cols'] = sorted(list((set(time_preprocessor.num_features) | set(time_preprocessor.cat_features)) - (set(df_params['numeric_cols']) | set(df_params['cat_cols']))))
+        elif exp.time_feats.method == 'time2vec_full':
+            df_params['time_cols'] = sorted(time_preprocessor.num_features + time_preprocessor.cat_features)
+        else:
+            raise Exception('ERROR time encoding method undefined!')
+    else:
+        if 'time' in data.columns:
+            data = data.drop(columns=['time'])
+        if 'date' in data.columns:
+            data = data.drop(columns=['date'])
+    print(data.columns)
     disc = None
     if 'disc' in exp:
         disc = init_disc(exp.disc, df_params, config)
         if exp_name[:2] != "st" and ('ST' not in exp_name) and (disc is not None):
             disc.fit(data)
-            data = disc.transform(data, to_embeds=exp['nemb'] if 'nemb' in exp else False)
+            data = disc.transform(data, to_embeds=exp[ 
+                                  'nemb'] if 'nemb' in exp else False)
         elif (disc is not None):
             disc.fit(data.sample(int(2e+5), random_state=42).merge(targets, on=df_params['id_col'], how='inner'))
             data = disc.transform(data, to_embeds=exp['nemb'] if 'nemb' in exp else False)
@@ -325,15 +410,16 @@ def main(exp_config_path, exp_name, ds_name, mode):
         nn = []
         for fn in df_params['numeric_cols']:
             nn += [fn + '_val', fn + '_pos']
-    if not os.path.isfile(f"{config.prep_datasets_path}/{exp_name}_dataset_{ds_name}.pkl"):
-        if 'glove_config' in exp:
+
+
+    if 'glove_config' in exp:
             if not exp['nsep']:
                 embedded_feats = df_params['numeric_cols'] + df_params['cat_cols']
             else:
                 embedded_feats = df_params['cat_cols']
             folder_nm = f'{config.emb_path}/{exp_name}'[:-4] if exp['agg_type'] != 'mean' else f'{config.emb_path}/{exp_name}'[:-5]
             glove_embedding = GloveEmbedding(
-                feature_names=embedded_feats,
+                feature_names=embedded_feats, 
                 calculate_cooccur=False,
                 embedding_folder=folder_nm,
                 glove_params=exp['glove_config']
@@ -341,54 +427,74 @@ def main(exp_config_path, exp_name, ds_name, mode):
             glove_embedding.load()
             data = glove_embedding.tokenize_data(data)
 
+    ids = pd.DataFrame({df_params['id_col'] : data[df_params['id_col']].unique()})
+    train_ids, test_ids = train_test_split(ids, test_size=config.datasets[ds_name].test_split_coef, random_state=config.random_state)
+    train_ids, val_ids = train_test_split(train_ids, test_size=config.datasets[ds_name].val_split_coef, random_state=config.random_state)
+
+    train = data.merge(train_ids, on=df_params['id_col'], how='inner')
+    val = data.merge(val_ids, on=df_params['id_col'], how='inner')
+    test = data.merge(test_ids, on=df_params['id_col'], how='inner')
+
+    del data, ids, train_ids, test_ids, val_ids
+
+    text_embed_path = None
+    if 'text_feats' in exp:
+        text_esz = 300 if not exp.text_feats.enable_pca else config.model.embed_size
+        text_embed_path = f'{config.text_emb_path}/{ds_name}_{exp.text_feats.method}_{text_esz}.pt'
+
+        if not os.path.isfile(text_embed_path):
+            text_prep = TextPreprocessor(
+                exp.text_feats.method, 
+                df_params['text_cols'], 
+                enable_pca=exp.text_feats.enable_pca, 
+                compressed_dim=config.model.embed_size
+            )
+            train_text_embeds = text_prep.calc_embeddings(train, fit_pca=True)
+            val_text_embeds = text_prep.calc_embeddings(val, fit_pca=False)
+            test_text_embeds = text_prep.calc_embeddings(test, fit_pca=False)
+
+            for fe in train_text_embeds.keys():       
+                train_text_embeds[fe] = torch.cat([train_text_embeds[fe], val_text_embeds[fe], test_text_embeds[fe]], dim=0)
+
+            torch.save(train_text_embeds, text_embed_path)
+
+            del train_text_embeds, val_text_embeds, test_text_embeds
+            logging.info(f"{exp_name}: text features preprocessing finished, embeddings saved to {text_embed_path}")
+        else:
+            logging.info(f"{exp_name}: text embeddings exists, was loaded from {text_embed_path}")
+
+        train['text_emb_id'] = np.arange(1, train.shape[0] + 1)
+        val['text_emb_id'] =  np.arange(train.shape[0] + 1, train.shape[0] + val.shape[0] + 1)
+        test['text_emb_id'] = np.arange(train.shape[0] + val.shape[0] + 1, train.shape[0] + val.shape[0] + test.shape[0] + 1)
+
+        train = train.drop(columns=df_params['text_cols'])
+        val = val.drop(columns=df_params['text_cols'])
+        test = test.drop(columns=df_params['text_cols'])
+     
+    if not os.path.isfile(f"{config.prep_datasets_path}/{exp_name}_dataset_{ds_name}.pkl"):
         preprocessor = PandasDataPreprocessor(
             col_id=df_params['id_col'],
             col_event_time=df_params['order_col'],
             event_time_transformation='none',
             category_transformation = 'none' if ('glove_config' in exp) else 'frequency',
             cols_category=df_params['cat_cols'],
-            cols_numerical= nn if ('nemb' in exp and exp['nemb']) else df_params['numeric_cols'] ,
-            cols_identity = df_params['text_cols'],
+            cols_numerical= nn if ('nemb' in exp and exp['nemb']) else df_params['numeric_cols'],
+            cols_identity = (['text_emb_id'] if ('text_cols' in df_params) else []) + df_params['time_cols'],
             return_records=True,
         )
-    
-        dataset = preprocessor.fit_transform(data)
+
+        train = preprocessor.fit_transform(train) 
+        val = preprocessor.transform(val) 
+        test = preprocessor.transform(test) 
         
-        dataset = sorted(dataset, key=lambda x: x[df_params['id_col']])
-    
         with open(f"{config.prep_datasets_path}/{exp_name}_dataset_{ds_name}.pkl", "wb") as fl:
-            pickle.dump(dataset , fl)
+            pickle.dump((train, val, test) , fl)
         logging.info(f"{exp_name}: data preprocessed and saved")
     else:
         with open(f"{config.prep_datasets_path}/{exp_name}_dataset_{ds_name}.pkl", "rb") as fl:
-            dataset = pickle.load(fl)
+            train, val, test = pickle.load(fl)
         logging.info(f"{exp_name}: data has been already preprocessed, load data")
-
-    set_trace()
-    train, test = train_test_split(dataset, test_size=config.datasets[ds_name].test_split_coef, random_state=config.random_state)
-    # with open('../data/train_trx_comp.parquet', 'rb') as fl:
-    #     train = pickle.load(fl)
-    # with open('../data/test_trx_comp.parquet', 'rb') as fl:
-    #     test = pickle.load(fl)
-
-    train, val = train_test_split(train, test_size=config.datasets[ds_name].val_split_coef, random_state=config.random_state)
-
-    text_embeddings_path = None
-    if 'text_feats' in exp:
-        text_embeddings_path = os.path.isfile(f"{config.raw_data_path}/text_embeddings/{exp_name}_te_{ds_name}.parquet")
-        if not text_embeddings_path:
-            text_prep = TextPreprocessor(exp.text_feats.method, df_params['text_cols'], enable_pca=True, compressed_dim=48)
     
-            train_text_embeds = text_prep.calc_embeddings(train, df_params['id_col'], fit_pca=True)
-            val_text_embeds = text_prep.calc_embeddings(val, df_params['id_col'], fit_pca=False)
-            test_text_embeds = text_prep.calc_embeddings(test, df_params['id_col'], fit_pca=False)
-    
-            pd.concat([train_text_embeds, val_text_embeds, test_text_embeds]).to_parquet(text_embeddings_path)
-
-            del text_prep
-
-    del dataset, data
-
     if mode == 'train' or mode == 'train-test':
         train_dl = PtlsDataModule(
             train_data = ColesDataset(
@@ -429,13 +535,13 @@ def main(exp_config_path, exp_name, ds_name, mode):
         )
     
         if exp.trx_encoder_type == 'cat':
-            seq_encoder = get_cat_encoder(df_params, agg_type=exp.agg_type, config=config, num_emb_flag=exp.nemb, text_embeddings_path=text_embeddings_path)
+            seq_encoder = get_cat_encoder(df_params, agg_type=exp.agg_type, config=config, exp=exp, num_emb_flag=exp.nemb, text_embed_path=text_embed_path, time_preprocessor=time_preprocessor)
         elif exp.trx_encoder_type == 'trans':
             seq_encoder = get_trans_encoder(df_params, agg_type=exp.agg_type, algo=exp.algo, config=config, numeric_separate=exp.nsep)
         elif exp.trx_encoder_type == 'glove':
             seq_encoder = get_glove_encoder(df_params, exp, glove_embedding, config=config)
         elif exp.trx_encoder_type == 'basic':
-            seq_encoder = get_basic_model_encoder(df_params, config=config)
+            seq_encoder = get_basic_model_encoder(df_params, config=config, exp=exp, text_embed_path=text_embed_path, time_preprocessor=time_preprocessor)
         else:
             raise Exception(f"No trx encoder with name {exp.trx_encoder_type}!")
     
@@ -497,13 +603,13 @@ def main(exp_config_path, exp_name, ds_name, mode):
             glove_embedding.load()
             
         if exp.trx_encoder_type == 'cat':
-            seq_encoder = get_cat_encoder(df_params, agg_type=exp.agg_type, config=config, num_emb_flag=exp.nemb)
+            seq_encoder = get_cat_encoder(df_params, agg_type=exp.agg_type, config=config, exp=exp, num_emb_flag=exp.nemb, text_embed_path=text_embed_path)
         elif exp.trx_encoder_type == 'trans':
             seq_encoder = get_trans_encoder(df_params, agg_type=exp.agg_type, algo=exp.algo, config=config, numeric_separate=exp.nsep)
         elif exp.trx_encoder_type == 'glove':
             seq_encoder = get_glove_encoder(df_params, exp, glove_embedding, config=config)
         elif exp.trx_encoder_type == 'basic':
-            seq_encoder = get_basic_model_encoder(df_params, config=config)
+            seq_encoder = get_basic_model_encoder(df_params, config=config, exp=exp, text_embed_path=text_embed_path)
         else:
             raise Exception(f"No trx encoder with name {exp.trx_encoder_type}!")
 
@@ -573,7 +679,7 @@ def main(exp_config_path, exp_name, ds_name, mode):
                 enable_model_summary=False,
                 logger=False
             )
-        
+
             with torch.no_grad():
                 cuda_memory_clear()
                 train_dl = inference_data_loader(train + val, num_workers=config.test.num_workers, batch_size=config.test.proxy_metrics.batch_size)
@@ -642,8 +748,6 @@ def main(exp_config_path, exp_name, ds_name, mode):
                     x_train = transformer.transform(x_train)
                     x_val = transformer.transform(x_val)
                     x_test = transformer.transform(x_test)
-
-                    #set_trace()
                     
                     clf.fit(x_train, y_train)
 
@@ -672,8 +776,11 @@ def main(exp_config_path, exp_name, ds_name, mode):
         if os.path.isfile(f"{config.report_path}/{config.test.report_name}_{ds_name}.csv"):
             prev_report = pd.read_csv(f"{config.report_path}/{config.test.report_name}_{ds_name}.csv").drop(columns=['Unnamed: 0'])
             pd.concat([prev_report, report]).to_csv(f'{config.report_path}/{config.test.report_name}_{ds_name}.csv')
+
+            logging.info(f"{exp_name}: report overwritten to {f'{config.report_path}/{config.test.report_name}_{ds_name}.csv'}")
         else:
-            report.to_csv(f'{config.report_path}/{config.test.report_name}_{ds_name}.csv')         
+            report.to_csv(f'{config.report_path}/{config.test.report_name}_{ds_name}.csv')     
+            logging.info(f"{exp_name}: report appended to {f'{config.report_path}/{config.test.report_name}_{ds_name}.csv'}")
             
 
 if __name__=="__main__":
