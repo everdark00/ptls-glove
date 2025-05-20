@@ -9,6 +9,7 @@ model:
     embed_size: 16
     seq_encoder_type: gru
     hidden_size: 800
+    neg_pair_selector_cnt: 5
 
 train:
     max_epochs: 150

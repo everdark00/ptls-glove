@@ -10,6 +10,7 @@ model:
     embed_size: 48
     seq_encoder_type: gru
     hidden_size: 1024
+    neg_pair_selector_cnt: 5
 
 train:
     max_epochs: 150
@@ -136,7 +137,7 @@ experiments:
             k_bins: 100
             fixed_emb: false
         nemb: false
-    quant_100_emb48_dist_common_emb_meant:
+    quant_100_emb48_dist_common_emb_mean:
         trx_encoder_type: cat
         agg_type : mean
         disc:

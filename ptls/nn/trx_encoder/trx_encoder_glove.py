@@ -231,7 +231,7 @@ class TrxEncoderCat(TrxEncoderBase):
         """Returns hidden size of output representation
         """
         if self.agg_type == "cat":
-            if self.numeric_id is None:
+            if not self.numeric_id:
                 return self.esz * (len(self.embeddings) + (len(self.numeric_features) if self.numeric_separate else 0)) + self.text_esz * len(self.text_embeddings.keys()) + self.time_out_size
             else:
                 return self.esz + len(self.numeric_features) + self.text_esz * len(self.text_embeddings.keys()) + self.time_out_size

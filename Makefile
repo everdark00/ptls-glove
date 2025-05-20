@@ -1,4 +1,4 @@
-CONFIG_PATH = C:\Users/toppc/Documents/diploma/ptls-glove/exp_config_gender.yaml
+CONFIG_PATH = C:\Users/toppc/Documents/diploma/ptls-glove/exp_config_x5.yaml
 CONFIG_PATH_OLD = C:\Users/toppc/Documents/diploma/ptls-glove/exp_config_my_params.yaml
 
 ### mingw32-make test
@@ -56,7 +56,7 @@ test1:
 	python exp_pipeline.py $(CONFIG_PATH) --exp-name=deeptlf9_disc_common_emb_mean --ds-name=gender --mode=test
 	python exp_pipeline.py $(CONFIG_PATH) --exp-name=quant_num_emb_dist_common_emb_cat --ds-name=gender --mode=test
 
-test4:
+test5:
 	python exp_pipeline.py $(CONFIG_PATH) --exp-name=quant_100_dist_common_emb_sum --ds-name=age_bins --mode=train-test
 	python exp_pipeline.py $(CONFIG_PATH) --exp-name=quant_100_dist_common_emb_mean --ds-name=age_bins --mode=train-test
 	python exp_pipeline.py $(CONFIG_PATH) --exp-name=quant_100_dist_common_emb_cat --ds-name=age_bins --mode=train-test
@@ -70,22 +70,17 @@ test4:
 	python exp_pipeline.py $(CONFIG_PATH) --exp-name=st_num_emb_dist_common_emb_sum --ds-name=age_bins --mode=train-test
 
 test4:
-	python exp_pipeline.py $(CONFIG_PATH) --exp-name=baseline_orig_emb_my_preproc --ds-name=age_bins --mode=train-test
-	python exp_pipeline.py $(CONFIG_PATH) --exp-name=quant_num_emb_dist_common_emb_cat --ds-name=age_bins --mode=train-test
-	python exp_pipeline.py $(CONFIG_PATH) --exp-name=quant_100_emb48_dist_common_emb_sum --ds-name=gender --mode=test
+	python exp_pipeline.py $(CONFIG_PATH) --exp-name=baseline --ds-name=x5 --mode=train-test
 
 test3:
-	python exp_pipeline.py $(CONFIG_PATH) --exp-name=quant_100_emb48_dist_common_emb_sum --ds-name=gender --mode=train-test
-	python exp_pipeline.py $(CONFIG_PATH) --exp-name=quant_100_emb48_dist_common_emb_mean --ds-name=gender --mode=train-test
-	python exp_pipeline.py $(CONFIG_PATH) --exp-name=quant_100_emb48_dist_common_emb_cat --ds-name=gender --mode=train-test
-	python exp_pipeline.py $(CONFIG_PATH) --exp-name=deeptlf9_emb48_disc_common_emb_mean --ds-name=gender --mode=train-test
-	python exp_pipeline.py $(CONFIG_PATH) --exp-name=deeptlf9_emb48_disc_common_emb_sum --ds-name=gender --mode=train-test
-	python exp_pipeline.py $(CONFIG_PATH) --exp-name=deeptlf9_emb48_disc_common_emb_cat --ds-name=gender --mode=train-test
-	python exp_pipeline.py $(CONFIG_PATH) --exp-name=quant_num_emb_emb48_dist_common_emb_cat --ds-name=gender --mode=train-test
-	python exp_pipeline.py $(CONFIG_PATH) --exp-name=baseline_orig_emb_my_preproc --ds-name=gender --mode=train-test
-	python exp_pipeline.py $(CONFIG_PATH) --exp-name=st_num_emb_emb48_dist_common_emb_cat --ds-name=gender --mode=train-test
-	python exp_pipeline.py $(CONFIG_PATH) --exp-name=st_num_emb_emb48_dist_common_emb_mean --ds-name=gender --mode=train-test
-	python exp_pipeline.py $(CONFIG_PATH) --exp-name=st_num_emb_emb48_dist_common_emb_sum --ds-name=gender --mode=train-test
+	python exp_pipeline.py $(CONFIG_PATH) --exp-name=baseline --ds-name=x5 --mode=train-test
+	python exp_pipeline.py $(CONFIG_PATH) --exp-name=quant_100_emb16_dist_common_emb_sum --ds-name=x5 --mode=train-test
+	python exp_pipeline.py $(CONFIG_PATH) --exp-name=quant_100_emb16_dist_common_emb_cat --ds-name=x5 --mode=train-test
+	python exp_pipeline.py $(CONFIG_PATH) --exp-name=deeptlf9_emb16_disc_common_emb_cat --ds-name=x5 --mode=train-test
+	python exp_pipeline.py $(CONFIG_PATH) --exp-name=deeptlf9_emb16_disc_common_emb_sum --ds-name=x5 --mode=train-test
+	python exp_pipeline.py $(CONFIG_PATH) --exp-name=quant_num_emb_emb16_dist_common_emb_cat --ds-name=x5 --mode=train-test
+	python exp_pipeline.py $(CONFIG_PATH) --exp-name=st_num_emb_emb16_dist_common_emb_cat --ds-name=x5 --mode=train-test
+	python exp_pipeline.py $(CONFIG_PATH) --exp-name=st_num_emb_emb16_dist_common_emb_sum --ds-name=x5 --mode=train-test
 
 test2:
 	python exp_pipeline.py $(CONFIG_PATH_OLD) --exp-name=baseline_myparams

@@ -36,6 +36,8 @@ from ptls.data_load.augmentations import DropoutTrx
 from ptls.preprocessing.deeptlf import DeepTLFDisc
 from ptls.preprocessing.time_preprocessing import TimePreprocessor 
 from ptls.preprocessing.text_preprocessing import TextPreprocessor  
+from ptls.frames.coles.losses import ContrastiveLoss
+from ptls.frames.coles.sampling_strategies import HardNegativePairSelector
 
 import ptls
 import torch
@@ -113,6 +115,29 @@ def prepare_data_gender_scenario():
     
     return source_data, targets, df_params
 
+def prepare_x5_scenario():
+    data_path = '../data/x5'
+    
+    source_data = pd.read_parquet(os.path.join(data_path, 'features.parquet'))
+
+    df_params = {
+        "numeric_cols" : ['trn_sum_from_iss', 'netto', 'regular_points_received'],
+        "cat_cols" : ['level_3', 'level_4', 'segment_id'],
+        "cat_unique" : [],
+        "order_col" : "ordercol",
+        "datecol" : "date",
+        "time_col": "time",
+        "id_col" : "client_id",
+        "target" : "age"
+    }
+
+    for f in df_params["cat_cols"]:
+        df_params["cat_unique"].append(source_data[f].unique().shape[0])
+
+    targets = pd.read_parquet(os.path.join(data_path, 'targets.parquet'))
+
+    return source_data, targets, df_params
+
 def init_disc(params, df_params, config):
     emb_size = None 
     if params.fixed_emb:
@@ -150,10 +175,16 @@ def get_basic_model_encoder(df_params, config, exp, text_embed_path=None, time_p
             'mcc_code': {'in': 200, 'out': 48},
             'tr_type': {'in': 100, 'out': 24}
         }
-    else:
+    elif df_params['target'] == 'bins':
         embeddings={
             'trans_date': {'in': 800, 'out': 16},
             'small_group': {'in': 250, 'out': 16}
+        }
+    elif df_params['target'] == 'age':
+        embeddings={
+            'level_3': {'in': 200, 'out': 16},
+            'level_4': {'in': 800, 'out': 16},
+            'segment_id': {'in': 120, 'out': 16}
         }
 
     if ('text_feats' in exp) and (not exp.text_feats.enable_pca):
@@ -309,6 +340,23 @@ def get_train_test_gender_scenario(df_params, train_embeds, test_embeds, train, 
     test_df = test_df.dropna()
     return train_df, test_df
 
+def get_train_test_x5_scenario(df_params, train_embeds, test_embeds, train, test):
+    data_path = "../data/x5"
+
+    df_target = pd.read_parquet(os.path.join(data_path, 'targets.parquet'))
+    df_target = df_target.set_index(df_params["id_col"])
+    df_target.rename(columns={"age": "target"}, inplace=True)
+    
+    train_df = pd.DataFrame(data=train_embeds, columns=[f'embed_{i}' for i in range(train_embeds.shape[1])])
+    train_df[df_params["id_col"]] = [x[df_params["id_col"]] for x in train]
+    train_df = train_df.merge(df_target, how='left', on=df_params["id_col"])
+    
+    test_df = pd.DataFrame(data=test_embeds, columns=[f'embed_{i}' for i in range(test_embeds.shape[1])])
+    test_df[df_params["id_col"]] = [x[df_params["id_col"]] for x in test]
+    test_df = test_df.merge(df_target, how='left', on=df_params["id_col"])
+    
+    return train_df, test_df
+
 
 @click.command()
 @click.argument('exp-config-path', type=click.Path(exists=True))
@@ -333,6 +381,8 @@ def main(exp_config_path, exp_name, ds_name, mode):
         data, targets, df_params = prepare_data_age_bins_scenario()
     elif ds_name == 'gender': 
         data, targets, df_params = prepare_data_gender_scenario()
+    elif ds_name == 'x5':
+        data, targets, df_params = prepare_x5_scenario()
     else:
         raise Exception('Incorrect dataset name provided!')
     logging.info(f"{exp_name}: data loaded")
@@ -394,7 +444,7 @@ def main(exp_config_path, exp_name, ds_name, mode):
     if 'disc' in exp:
         disc = init_disc(exp.disc, df_params, config)
         if exp_name[:2] != "st" and ('ST' not in exp_name) and (disc is not None):
-            disc.fit(data)
+            disc.fit(data.sample(int(2e+6)))
             data = disc.transform(data, to_embeds=exp[ 
                                   'nemb'] if 'nemb' in exp else False)
         elif (disc is not None):
@@ -551,6 +601,7 @@ def main(exp_config_path, exp_name, ds_name, mode):
         
         model = CoLESModule(
             seq_encoder=seq_encoder,
+            loss=ContrastiveLoss(margin=0.5, sampling_strategy=HardNegativePairSelector(neg_count=config.model.neg_pair_selector_cnt)),
             optimizer_partial=partial(torch.optim.Adam, lr=config.train.lr, weight_decay=config.train.weight_decay),
             lr_scheduler_partial=lr_scheduler,
         )
@@ -692,6 +743,8 @@ def main(exp_config_path, exp_name, ds_name, mode):
                 train_df, test_df = get_train_test_age_bins_scenario(df_params, train_embeds, test_embeds, train + val, test)
             elif ds_name == 'gender': 
                 train_df, test_df = get_train_test_gender_scenario(df_params, train_embeds, test_embeds, train + val, test)
+            elif ds_name == 'x5':
+                train_df, test_df = get_train_test_x5_scenario(df_params, train_embeds, test_embeds, train + val, test)
             else:
                 raise Exception(f"No raw dataset with name {ds_name} exists!")
 
