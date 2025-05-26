@@ -42,7 +42,6 @@ class TreeDrivenEncoder:
             node_data.update(extract_node_data_from_tree(tree_number, tree))
 
         feature_counter = Counter(data["feature"] for data in node_data.values())
-        print(feature_counter)
 
         self.all_conditions = [
             data

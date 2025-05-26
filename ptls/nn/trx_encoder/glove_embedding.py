@@ -1,7 +1,7 @@
 
 import numpy as np
 import pickle
-from tqdm import tqdm
+from tqdm.notebook import tqdm
 from torch.utils.data import Dataset, DataLoader
 from torch import nn
 import torch
@@ -66,6 +66,9 @@ class GloveEmbedding():
         
 
     def fit(self, data):
+        if os.path.isfile(os.path.join(self.saved_data_path, "model.pth")):
+            print('glove embeddings already calculated')
+            return 0
         data = data[self.feature_names]
                 
         num_features = len(self.feature_names)
@@ -85,9 +88,9 @@ class GloveEmbedding():
             pickle.dump(self.token2cat, f)
         with open(os.path.join(self.saved_data_path, 'glove_cat2token.pkl'), 'wb') as f:
             pickle.dump(self.cat2token, f)
-        
+
         #build coocur dict
-        if self.calculate_cooccur:
+        if not os.path.isfile(os.path.join(self.saved_data_path, "cooccur_dataset.csv")):
             cooccur_dict = dict()
             for item in data.values:
                 for i in range(num_features):
@@ -120,7 +123,7 @@ class GloveEmbedding():
             embedding_size=self.params["embedding_size"],
             x_max=self.params["x_max"],
             alpha=self.params["alpha"]
-        )
+        ).to(device)
         
         dataloader = DataLoader(
             dataset=self.cooccur_dataset,
@@ -132,8 +135,6 @@ class GloveEmbedding():
             self.model.parameters(),
             lr=7e-2
         )
-
-        self.model.to(device)
         
         print("train started")
         self.model.train()
@@ -154,7 +155,8 @@ class GloveEmbedding():
                 optimizer.zero_grad()
         
             losses.append(epoch_loss)
-            print(f"Epoch {epoch}: loss = {epoch_loss}")
+            if epoch % 10 == 0:
+                print(f"Epoch {epoch}: loss = {epoch_loss}")
         torch.save(self.model.state_dict(), os.path.join(self.saved_data_path, "model.pth"))
 
     def load(self, model_path="glove_models/model.pth"):

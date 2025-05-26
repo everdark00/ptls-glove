@@ -5,6 +5,7 @@ raw_data_path: ../data/
 emb_path: ../glove_embeddings/
 text_emb_path: ../data/text_embeddings/
 report_path: ../coles_experiments/
+enable_tensorboard: false
 
 model:
     embed_size: 16
@@ -15,7 +16,7 @@ model:
 train:
     max_epochs: 30
     device: gpu
-    lr: 0.002
+    lr: 0.001
     weight_decay: 0.0
     data_loader:
         train:
@@ -29,8 +30,8 @@ train:
             split_count: 5
             cnt_min: 30
             cnt_max: 180
-            batch_size: 256
-        num_workers: 1
+            batch_size: 512
+        num_workers: 0
     lr_scheduler:
         enabled: true
         step_size: 3
@@ -50,7 +51,7 @@ test:
             split_count: 5
             cnt_min: 30
             cnt_max: 180
-            batch_size: 128
+            batch_size: 512
     proxy_metrics:
         enable: true
         calc_on_val: true
@@ -79,10 +80,10 @@ test:
         metrics:
             - accuracy
         n_folds: 5
-        batch_size: 32
+        batch_size: 64
     num_workers: 0
     device: gpu
-    report_name: airi_conf_x5_disc
+    report_name: unsupervised_embed_sz
 
 datasets:
     age_bins:
@@ -101,6 +102,37 @@ datasets:
         val_split_coef: 0.05
 
 experiments:
+    baseline_8:
+        trx_encoder_type: basic
+        nsep: true
+        forse_emb_sz: 8
+
+    baseline_16:
+        trx_encoder_type: basic
+        nsep: true
+        forse_emb_sz: 16
+
+    baseline_24:
+        trx_encoder_type: basic
+        nsep: true
+        forse_emb_sz: 24
+
+    baseline_48:
+        trx_encoder_type: basic
+        nsep: true
+        forse_emb_sz: 48
+
+    baseline_80:
+        trx_encoder_type: basic
+        nsep: true
+        forse_emb_sz: 80
+
+    baseline_112:
+        trx_encoder_type: basic
+        nsep: true
+        forse_emb_sz: 112
+
+##########################################
     baseline:
         trx_encoder_type: basic
         nsep: true
@@ -160,8 +192,8 @@ experiments:
         agg_type : cat 
         disc:
             type: st
-            k_bins: 20
             task_type: classification
+            k_bins: 20
             fixed_emb: false
         nemb: false
     deeptlf9_emb16_disc_common_emb_cat:
@@ -410,14 +442,6 @@ experiments:
         trx_encoder_type: basic
         nsep: true
         time_feats:
-            scale_numeric: false
-            method: time2vec_full
-            time2vec_hs: 16
-
-    baseline_time2vec_full_scale:
-        trx_encoder_type: basic
-        nsep: true
-        time_feats:
             scale_numeric: true
             method: time2vec_full
             time2vec_hs: 16
@@ -448,7 +472,7 @@ experiments:
             time2vec_hs: 16
         nemb: false
 
-    quant_100_dist_common_emb_time2vec_full_sum:
+    quant_100_dist_common_emb_time2vec8_full_sum:
         trx_encoder_type: cat
         agg_type : sum 
         disc:
@@ -456,9 +480,9 @@ experiments:
             k_bins: 100
             fixed_emb: false
         time_feats:
-            scale_numeric: false
+            scale_numeric: true
             method: time2vec_full
-            time2vec_hs: 16
+            time2vec_hs: 8
         nemb: false
 
     quant_100_dist_common_emb_time_plain_cat:

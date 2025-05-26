@@ -40,7 +40,7 @@ class DeepTLF(BaseEstimator):
     def __init__(
         self,
         n_est=23,
-        max_depth=4,
+        max_depth=6,
         xgb_lr=0.5,
         min_freq=2
     ):
@@ -64,9 +64,10 @@ class DeepTLF(BaseEstimator):
         # Using XGBRegressor for self-supervised learning.
         self.xgb_model = xgb.XGBRegressor(
             learning_rate=self.xgb_lr,
-            n_jobs=-1,
             max_depth=self.max_depth,
             n_estimators=self.n_est,
         )
         # Using X_train as target for self-supervised learning.
+        from pdb import set_trace
+        #set_trace()
         self.xgb_model.fit(X_train, X_train)

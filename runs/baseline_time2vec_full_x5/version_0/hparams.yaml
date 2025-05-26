@@ -1,0 +1,11 @@
+pretrained_lr: null
+train_update_n_steps: null
+train_batch_size: 32
+train_num_workers: 0
+train_drop_last: false
+valid_batch_size: 128
+valid_num_workers: 0
+valid_drop_last: false
+test_batch_size: null
+test_num_workers: null
+test_drop_last: false

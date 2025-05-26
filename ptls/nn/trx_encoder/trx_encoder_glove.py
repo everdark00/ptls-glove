@@ -141,10 +141,11 @@ class TrxEncoderCat(TrxEncoderBase):
             if self.text_embedding_proj:
                 for fn in text_embeddings_vectors.keys():
                     self.text_proj_module[fn] = nn.Sequential(
-                            nn.Linear(self.text_esz, self.esz),
+                            nn.Linear(self.text_esz, 48),
+                            nn.BatchNorm1d(num_features=48),
                             nn.ReLU()
                         ).to(self.device)
-                self.text_esz = self.esz
+                self.text_esz = 48
             else:
                 if agg_type != 'cat' and self.text_esz != self.esz:
                     raise Exception(f'General rep size is {self.esz} and text embedding size is {self.text_esz}. Add proj layer or change embedding dimensionality!')
@@ -165,6 +166,7 @@ class TrxEncoderCat(TrxEncoderBase):
             self.time_out_size =  self.esz if (not self.numeric_id) else (self.esz // len(self.embeddings.keys()))
             self.time_proj_module['proj'] = nn.Sequential(
                             nn.Linear(self.time2vec_hs * len(self.time_features), self.time_out_size),
+                            nn.BatchNorm1d(num_features=self.time_out_size),
                             nn.ReLU()
                         ).to(self.device)
 

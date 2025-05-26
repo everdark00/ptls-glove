@@ -118,14 +118,14 @@ def prepare_data_gender_scenario():
 def prepare_x5_scenario():
     data_path = '../data/x5'
     
-    source_data = pd.read_parquet(os.path.join(data_path, 'features.parquet'))
+    source_data = pd.read_parquet(os.path.join(data_path, 'features_sample.parquet'))
 
     df_params = {
         "numeric_cols" : ['trn_sum_from_iss', 'netto', 'regular_points_received'],
         "cat_cols" : ['level_3', 'level_4', 'segment_id'],
         "cat_unique" : [],
         "order_col" : "ordercol",
-        "datecol" : "date",
+        "date_col" : "date",
         "time_col": "time",
         "id_col" : "client_id",
         "target" : "age"
@@ -134,7 +134,7 @@ def prepare_x5_scenario():
     for f in df_params["cat_cols"]:
         df_params["cat_unique"].append(source_data[f].unique().shape[0])
 
-    targets = pd.read_parquet(os.path.join(data_path, 'targets.parquet'))
+    targets = pd.read_parquet(os.path.join(data_path, 'targets_sample.parquet'))
 
     return source_data, targets, df_params
 
@@ -151,11 +151,12 @@ def init_disc(params, df_params, config):
             emb_sz = emb_size
         )
     elif params.type == 'st':
+        k_bins = [params.k_bins] * len(df_params['numeric_cols']) if 'k_bins' in params else None
         disc = SingleTreeDiscretizer(
             f_names = df_params['numeric_cols'], 
             target_name = df_params['target'], 
             target_type = params.task_type, 
-            k_bins = [params.k_bins],
+            k_bins = k_bins,
             emb_sz = emb_size
         )
     elif params.type == 'deeptlf':
@@ -172,19 +173,19 @@ def init_disc(params, df_params, config):
 def get_basic_model_encoder(df_params, config, exp, text_embed_path=None, time_preprocessor=None):
     if df_params['target'] == 'gender':
         embeddings={
-            'mcc_code': {'in': 200, 'out': 48},
-            'tr_type': {'in': 100, 'out': 24}
+            'mcc_code': {'in': 200, 'out': config.model.embed_size},
+            'tr_type': {'in': 100, 'out': config.model.embed_size if 'forse_emb_sz' in exp else 24}
         }
     elif df_params['target'] == 'bins':
         embeddings={
-            'trans_date': {'in': 800, 'out': 16},
-            'small_group': {'in': 250, 'out': 16}
+            'trans_date': {'in': 800, 'out': config.model.embed_size},
+            'small_group': {'in': 250, 'out': config.model.embed_size}
         }
     elif df_params['target'] == 'age':
         embeddings={
-            'level_3': {'in': 200, 'out': 16},
-            'level_4': {'in': 800, 'out': 16},
-            'segment_id': {'in': 120, 'out': 16}
+            'level_3': {'in': 200, 'out': config.model.embed_size},
+            'level_4': {'in': 800, 'out': config.model.embed_size},
+            'segment_id': {'in': 120, 'out': config.model.embed_size}
         }
 
     if ('text_feats' in exp) and (not exp.text_feats.enable_pca):
@@ -343,7 +344,7 @@ def get_train_test_gender_scenario(df_params, train_embeds, test_embeds, train, 
 def get_train_test_x5_scenario(df_params, train_embeds, test_embeds, train, test):
     data_path = "../data/x5"
 
-    df_target = pd.read_parquet(os.path.join(data_path, 'targets.parquet'))
+    df_target = pd.read_parquet(os.path.join(data_path, 'targets_sample.parquet'))
     df_target = df_target.set_index(df_params["id_col"])
     df_target.rename(columns={"age": "target"}, inplace=True)
     
@@ -389,19 +390,12 @@ def main(exp_config_path, exp_name, ds_name, mode):
 
     exp = config.experiments[exp_name]
 
+    if 'forse_emb_sz' in exp:
+        config.model.embed_size = exp.forse_emb_sz
+
     if 'baseline' in exp_name:
         for fe in df_params["numeric_cols"]:
             data[fe] = np.sign(data[fe]) * np.log(np.abs(data[fe]) + 1.0)
-
-    # if 'datetime_feats' in exp:
-    #     if ds_name == 'age_bins':
-    #         dt_preprocessor = TimePreprocessor(idcol=df_params["id_col"], 
-    #                   ordercol=df_params["order_col"],
-    #                   mode=exp['datetime_feats'])
-    #     elif ds_name == 'gender': 
-            
-    #     else:
-    #     raise Exception('Incorrect dataset name provided!')
 
     time_preprocessor = None
     df_params['time_cols'] = []
@@ -417,7 +411,8 @@ def main(exp_config_path, exp_name, ds_name, mode):
             ordercol=df_params["order_col"], 
             datecol=df_params["date_col"] if "date_col" in df_params else None, 
             timecol=df_params["time_col"] if "time_col" in df_params else None, 
-            scale_numeric=exp.time_feats.scale_numeric
+            scale_numeric=exp.time_feats.scale_numeric,
+            exclude_list=['TIME_unix_seconds']
         )
 
         data = time_preprocessor.fit_transform(data)
@@ -435,11 +430,17 @@ def main(exp_config_path, exp_name, ds_name, mode):
         else:
             raise Exception('ERROR time encoding method undefined!')
     else:
-        if 'time' in data.columns:
-            data = data.drop(columns=['time'])
-        if 'date' in data.columns:
-            data = data.drop(columns=['date'])
+        if 'time_col' in df_params and df_params['time_col'] in data.columns:
+            data = data.drop(columns=[df_params['time_col']])
+        if 'date_col' in df_params and df_params['date_col'] in data.columns:
+            data = data.drop(columns=[df_params['date_col']])
+
     print(data.columns)
+
+    for fe in df_params['cat_cols']:
+        data[fe] = data[fe].astype("category")
+        data[fe] = data[fe].cat.codes
+        
     disc = None
     if 'disc' in exp:
         disc = init_disc(exp.disc, df_params, config)
@@ -450,6 +451,10 @@ def main(exp_config_path, exp_name, ds_name, mode):
         elif (disc is not None):
             disc.fit(data.sample(int(2e+5), random_state=42).merge(targets, on=df_params['id_col'], how='inner'))
             data = disc.transform(data, to_embeds=exp['nemb'] if 'nemb' in exp else False)
+
+        if not exp['nemb']:
+            for fn in df_params['numeric_cols']:
+                data[fn] = data[fn].astype('int64')
         logging.info(f"{exp_name}: data discretized")
 
     if 'nemb' in exp and not exp['nemb']:
@@ -463,19 +468,21 @@ def main(exp_config_path, exp_name, ds_name, mode):
 
 
     if 'glove_config' in exp:
-            if not exp['nsep']:
-                embedded_feats = df_params['numeric_cols'] + df_params['cat_cols']
-            else:
-                embedded_feats = df_params['cat_cols']
-            folder_nm = f'{config.emb_path}/{exp_name}'[:-4] if exp['agg_type'] != 'mean' else f'{config.emb_path}/{exp_name}'[:-5]
-            glove_embedding = GloveEmbedding(
-                feature_names=embedded_feats, 
-                calculate_cooccur=False,
-                embedding_folder=folder_nm,
-                glove_params=exp['glove_config']
-            )
-            glove_embedding.load()
-            data = glove_embedding.tokenize_data(data)
+        exp['glove_config']['embedding_size'] = config.model.embed_size
+        if not exp['nsep']:
+            embedded_feats = df_params['numeric_cols'] + df_params['cat_cols']
+        else:
+            embedded_feats = df_params['cat_cols']
+        folder_nm = f'{config.emb_path}/{exp_name}'[:-4] if exp['agg_type'] != 'mean' else f'{config.emb_path}/{exp_name}'[:-5]
+        glove_embedding = GloveEmbedding(
+            feature_names=embedded_feats, 
+            calculate_cooccur=True,
+            embedding_folder=folder_nm,
+            glove_params=exp['glove_config']
+        )
+        glove_embedding.fit(data)
+        glove_embedding.load()
+        data = glove_embedding.tokenize_data(data)
 
     ids = pd.DataFrame({df_params['id_col'] : data[df_params['id_col']].unique()})
     train_ids, test_ids = train_test_split(ids, test_size=config.datasets[ds_name].test_split_coef, random_state=config.random_state)
@@ -609,8 +616,10 @@ def main(exp_config_path, exp_name, ds_name, mode):
         callbacks = []
         if config.train.early_stopping.enabled:
             callbacks.append(EarlyStopping(f'valid/{model.metric_name}', mode='max', patience=config.train.early_stopping.patience, min_delta=config.train.early_stopping.min_delta))
-
+        
         if config.train.save_best_checkpoint:
+            if os.path.exists(f'../coles_models/{exp_name}_{ds_name}.ckpt'):
+                os.remove(f'../coles_models/{exp_name}_{ds_name}.ckpt')
             callbacks.append(ModelCheckpoint(
                 monitor=f'valid/{model.metric_name}',
                 dirpath=config.models_path,

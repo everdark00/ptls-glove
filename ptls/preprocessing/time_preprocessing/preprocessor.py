@@ -5,7 +5,7 @@ from sklearn.preprocessing import MinMaxScaler
 class TimePreprocessor:
     def __init__(self, idcol, ordercol, datecol=None, timecol=None, mode='all', exclude_list=[], scale_numeric=False):
         """
-        ordercol: must contain positive integers
+        ordercol: must contain positive floats
         datecol: must contain transaction date in format of string YYYY-MM-DD
         timecol: must contain transaction time in format of string HH:MM:SS
         mode: 'all' - collect all features, 'cat' - collect categorical features, 'num' - collect numeric features
@@ -74,6 +74,7 @@ class TimePreprocessor:
 
         self.cat_features = sorted(list(set(self.cat_features) - set(self.exclude_list)))
         self.num_features = sorted(list(set(self.num_features) - set(self.exclude_list)))
+        self.nonperiodic = sorted(list(set(self.nonperiodic) - set(self.exclude_list)))
 
 
     def transform(self, X):

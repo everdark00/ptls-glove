@@ -83,11 +83,14 @@ class SingleTreeDiscretizer():
                     )
                 disc.fit(X=X.loc[:, [fn]], y=X[self.target_name])
                 self.tresholds[fn] = list(sorted(disc.tree_.threshold[disc.tree_.threshold != -2]))
+            
             if self.emb_sz is not None:
                 if len(self.tresholds[fn]) < self.emb_sz + 1:
                     raise Exception(f"too few bins in {fn} discretization, raise k_bins or lower pruning rate")
                 else:
                     self.emb_tresholds[fn] = self.decrease_n_bins(self.tresholds[fn], self.emb_sz + 2)
+                    
+        print('nbins', [(fn, len(self.tresholds[fn])) for fn in self.f_names])
 
     def fit_transform(self, X, to_embeds=False):
         self.fit(X)

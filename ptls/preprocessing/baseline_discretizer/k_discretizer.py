@@ -30,6 +30,7 @@ class KDiscretizer():
     def fit(self, X):
         self.disc.fit(X.loc[:, self.f_names])
         self.tresholds = {self.disc.feature_names_in_[i] : self.disc.bin_edges_[i] for i in range(len(self.f_names))}
+        print("nbins: ", [(fn, len(self.tresholds[fn])) for fn in self.f_names])
         for fn in self.f_names:
             if self.emb_sz is not None:
                 if len(self.tresholds[fn]) < self.emb_sz + 1:

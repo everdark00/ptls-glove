@@ -9,7 +9,7 @@ from omegaconf import DictConfig
 
 from ptls.data_load.padded_batch import PaddedBatch
 
-logger = logging.getLogger(__name__)
+#logger = logging.getLogger(__name__)
 
 
 class SequenceToTarget(pl.LightningModule):
@@ -113,11 +113,14 @@ class SequenceToTarget(pl.LightningModule):
     def training_step(self, batch, _):
         x, y = batch
         y_h = self(x)
+        from pdb import set_trace
+        #set_trace()
         loss = self.loss(y_h, y)
-        self.log('loss', loss)
+        #self.log('loss', loss)
         if isinstance(x, PaddedBatch):
             self.log_dict(
                 {"seq_len": x.seq_lens.float().mean(),
+                 "loss" : loss,
                  "y": y.unsqueeze(-1).sum(1).squeeze().float().mean(),
                 }, prog_bar=True)
         train_update_n_steps = self.hparams.train_update_n_steps
@@ -125,9 +128,10 @@ class SequenceToTarget(pl.LightningModule):
                 train_update_n_steps is not None and self.global_step % train_update_n_steps == 0:
             for name, mf in self.train_metrics.items():
                 mf(y_h, y)
+
         return loss
 
-    def training_epoch_end(self, outputs):
+    def on_training_epoch_end(self):
         for name, mf in self.train_metrics.items():
             self.log(f'train/{name}', mf.compute(), prog_bar=False)
         for name, mf in self.train_metrics.items():
@@ -140,7 +144,7 @@ class SequenceToTarget(pl.LightningModule):
         for name, mf in self.valid_metrics.items():
             mf(y_h, y)
 
-    def validation_epoch_end(self, outputs):
+    def on_validation_epoch_end(self):
         for name, mf in self.valid_metrics.items():
             self.log(f'valid/{name}', mf.compute(), prog_bar=True)
         for name, mf in self.valid_metrics.items():
@@ -152,7 +156,7 @@ class SequenceToTarget(pl.LightningModule):
         for name, mf in self.test_metrics.items():
             mf(y_h, y)
 
-    def test_epoch_end(self, outputs):
+    def on_test_epoch_end(self):
         for name, mf in self.test_metrics.items():
             value = mf.compute().item()
             self.log(f'test/{name}', value, prog_bar=False)
@@ -190,8 +194,11 @@ class SequenceToTarget(pl.LightningModule):
             parameters = self.parameters()
 
         optimizer = self.optimizer_partial(parameters)
-        scheduler = self.lr_scheduler_partial(optimizer)
-        return [optimizer], [scheduler]
+        if self.lr_scheduler_partial is not None:
+            scheduler = self.lr_scheduler_partial(optimizer)
+            return [optimizer], [scheduler]
+        else:
+            return [optimizer]
 
     @staticmethod
     def to_pandas(x):

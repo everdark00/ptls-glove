@@ -25,3 +25,14 @@ file:///C:/Users/peter/Downloads/applsci-12-09637-v2.pdf
 --------------------------------------------------------------------
 
 https://arxiv.org/pdf/1907.05321
+
+
+baseline
+rubert pca + time2vec_part
+
+quant cat
+fasttext_pca + time2vec_part
+
+quant sum
+rubert nopca + time2vec_full
+

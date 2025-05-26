@@ -33,7 +33,7 @@ class DeepTLFDisc():
         split_conditions = self.tree_encoder.fit(X[self.params["features"]])
         for cond in split_conditions:
             self.tresholds[cond["feature"]].append(cond["threshold"])
-
+        print('nbins', [(fn, len(self.tresholds[fn])) for fn in self.params["features_to_split"]])
         for fn in self.params["features_to_split"]:
             self.k_bins.append(len(self.tresholds[fn]))
             if "emb_size" in self.params:
